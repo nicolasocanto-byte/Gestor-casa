@@ -38,6 +38,20 @@ class ProductoAlmacen {
   String get descripcionCompleta => '[$categoria] $nombre ($cantidadPaquete $unidad)';
 }
 
+class ItemDespensa {
+  final String nombre;
+  double cantidadActual;
+  final String unidad;
+  final String categoria;
+
+  ItemDespensa({
+    required this.nombre,
+    required this.cantidadActual,
+    required this.unidad,
+    required this.categoria,
+  });
+}
+
 class ProductoCompra {
   final String nombre;
   final String lugar;
@@ -72,7 +86,7 @@ class PantallaNavegacionPrincipal extends StatefulWidget {
 class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipal> {
   int _indicePestana = 0;
 
-  // Listas de datos guardados por defecto
+  // Catalogos iniciales
   final List<String> _tiendasGuardadas = ['Supermercado Coto', 'Verdulería del Barrio', 'Carrefour'];
   final List<String> _categoriasGuardadas = ['Alimentos', 'Limpieza', 'Bebidas', 'Higiene y Perfumería'];
   
@@ -81,8 +95,35 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
     ProductoAlmacen(nombre: 'Leche Entera', cantidadPaquete: 1, unidad: 'L', categoria: 'Bebidas'),
     ProductoAlmacen(nombre: 'Detergente Lavavajillas', cantidadPaquete: 750, unidad: 'ml', categoria: 'Limpieza'),
     ProductoAlmacen(nombre: 'Jabón Líquido Ropa', cantidadPaquete: 3, unidad: 'L', categoria: 'Limpieza'),
-    ProductoAlmacen(nombre: 'Papel Higiénico (4 rollos)', cantidadPaquete: 4, unidad: 'un', categoria: 'Higiene y Perfumería'),
   ];
+
+  // Stock inicial de la despensa de la casa
+  final List<ItemDespensa> _inventarioDespensa = [
+    ItemDespensa(nombre: 'Fideos Moñito', cantidadActual: 1000, unidad: 'gr', categoria: 'Alimentos'),
+    ItemDespensa(nombre: 'Leche Entera', cantidadActual: 2, unidad: 'L', categoria: 'Bebidas'),
+    ItemDespensa(nombre: 'Detergente Lavavajillas', cantidadActual: 750, unidad: 'ml', categoria: 'Limpieza'),
+  ];
+
+  void _ingresarCompraADespensa(List<ProductoCompra> productosTicket) {
+    setState(() {
+      for (var prod in productosTicket) {
+        final index = _inventarioDespensa.indexWhere(
+          (item) => item.nombre.toLowerCase() == prod.nombre.toLowerCase() && item.unidad == prod.unidad,
+        );
+
+        if (index >= 0) {
+          _inventarioDespensa[index].cantidadActual += prod.cantidadTotalProd;
+        } else {
+          _inventarioDespensa.add(ItemDespensa(
+            nombre: prod.nombre,
+            cantidadActual: prod.cantidadTotalProd,
+            unidad: prod.unidad,
+            categoria: prod.categoria,
+          ));
+        }
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +132,12 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         tiendas: _tiendasGuardadas,
         categorias: _categoriasGuardadas,
         catalogo: _catalogoAlmacen,
+        onFinalizarCompra: _ingresarCompraADespensa,
+      ),
+      DespensaConsumoPantalla(
+        despensa: _inventarioDespensa,
+        categorias: _categoriasGuardadas,
+        onActualizar: () => setState(() {}),
       ),
       GestionCatalogosPantalla(
         tiendas: _tiendasGuardadas,
@@ -105,9 +152,12 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _indicePestana,
         onTap: (index) => setState(() => _indicePestana = index),
+        selectedItemColor: Colors.teal,
+        type: BottomNavigationBarType.fixed,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Registrar Compra'),
-          BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Tiendas y Almacén'),
+          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Comprar'),
+          BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: 'Despensa'),
+          BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Catálogos'),
         ],
       ),
     );
@@ -119,12 +169,14 @@ class RegistroComprasPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
   final List<ProductoAlmacen> catalogo;
+  final Function(List<ProductoCompra>) onFinalizarCompra;
 
   const RegistroComprasPantalla({
     super.key,
     required this.tiendas,
     required this.categorias,
     required this.catalogo,
+    required this.onFinalizarCompra,
   });
 
   @override
@@ -168,11 +220,11 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
     final precio = double.tryParse(_precioPaqueteController.text.trim().replaceAll(',', '.')) ?? 0.0;
 
     if (tienda == null || tienda.isEmpty) {
-      _mostrarMensaje('Por favor selecciona o agrega una tienda.');
+      _mostrarMensaje('Selecciona una tienda primero.');
       return;
     }
     if (nombre.isEmpty || paquetes <= 0 || tamanoPaquete <= 0 || precio <= 0) {
-      _mostrarMensaje('Completa nombre, paquetes, contenido y precio.');
+      _mostrarMensaje('Completa el nombre, cantidad, contenido y precio.');
       return;
     }
 
@@ -192,6 +244,24 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
       _tamanoPaqueteController.clear();
       _precioPaqueteController.clear();
       _paquetesController.text = '1';
+    });
+  }
+
+  void _finalizarYGuardarEnDespensa() {
+    if (_productosTicket.isEmpty) {
+      _mostrarMensaje('Agrega al menos un producto al ticket.');
+      return;
+    }
+
+    widget.onFinalizarCompra(List.from(_productosTicket));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('¡Compra guardada y sumada al stock de la Despensa!')),
+    );
+
+    setState(() {
+      _productosTicket.clear();
+      _descuentoController.clear();
     });
   }
 
@@ -229,7 +299,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Registro de Compras'),
+        title: const Text('Registrar Compra'),
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       ),
       body: SingleChildScrollView(
@@ -237,7 +307,6 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Seleccionar Tienda
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
@@ -250,13 +319,12 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                   ),
                   items: widget.tiendas.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                   onChanged: (val) => setState(() => _tiendaSeleccionada = val),
-                  hint: const Text('Elije una tienda guardada'),
+                  hint: const Text('Elije una tienda'),
                 ),
               ),
             ),
             const SizedBox(height: 12),
 
-            // Formulario Agregar Producto
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
@@ -266,7 +334,6 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                     const Text('Añadir Producto al Ticket', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 10),
 
-                    // Filtro por categoría para catálogo
                     Row(
                       children: [
                         Expanded(
@@ -290,11 +357,10 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                     ),
                     const SizedBox(height: 10),
 
-                    // Selector del producto guardado
                     DropdownButtonFormField<ProductoAlmacen>(
                       value: _productoSeleccionado,
                       decoration: const InputDecoration(
-                        labelText: 'Cargar desde Almacén',
+                        labelText: 'Cargar desde Catálogo',
                         prefixIcon: Icon(Icons.inventory),
                         border: OutlineInputBorder(),
                       ),
@@ -385,7 +451,6 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
             ),
             const SizedBox(height: 12),
 
-            // Lista de productos del ticket
             const Text('Productos en el Ticket:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
 
@@ -428,7 +493,6 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                   ),
             const SizedBox(height: 12),
 
-            // Descuento y Totales
             Card(
               color: Colors.teal.shade50,
               child: Padding(
@@ -491,6 +555,17 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: _finalizarYGuardarEnDespensa,
+                      icon: const Icon(Icons.check_circle),
+                      label: const Text('Finalizar Compra y Sumar a Despensa'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(45),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -502,7 +577,173 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   }
 }
 
-// PESTAÑA 2: GESTIÓN DE TIENDAS, CATEGORÍAS Y ALMACÉN
+// PESTAÑA 2: DESPENSA Y CONSUMO DIARIO
+class DespensaConsumoPantalla extends StatefulWidget {
+  final List<ItemDespensa> despensa;
+  final List<String> categorias;
+  final VoidCallback onActualizar;
+
+  const DespensaConsumoPantalla({
+    super.key,
+    required this.despensa,
+    required this.categorias,
+    required this.onActualizar,
+  });
+
+  @override
+  State<DespensaConsumoPantalla> createState() => _DespensaConsumoPantallaState();
+}
+
+class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
+  String? _filtroCategoria;
+
+  void _abrirModalConsumo(ItemDespensa item) {
+    final consumoController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Consumir: ${item.nombre}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Stock disponible actual: ${item.cantidadActual.toStringAsFixed(1)} ${item.unidad}'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: consumoController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Cantidad a descontar (${item.unidad})',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final valorConsumido = double.tryParse(consumoController.text.trim().replaceAll(',', '.')) ?? 0.0;
+                if (valorConsumido > 0) {
+                  setState(() {
+                    item.cantidadActual -= valorConsumido;
+                    if (item.cantidadActual < 0) item.cantidadActual = 0;
+                  });
+                  widget.onActualizar();
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Descontar Stock'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  List<ItemDespensa> get _itemsFiltrados {
+    if (_filtroCategoria == null || _filtroCategoria == 'Todas') {
+      return widget.despensa;
+    }
+    return widget.despensa.where((i) => i.categoria == _filtroCategoria).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Stock de la Despensa'),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Filtro por categoría
+            DropdownButtonFormField<String>(
+              value: _filtroCategoria ?? 'Todas',
+              decoration: const InputDecoration(
+                labelText: 'Filtrar por Categoría',
+                prefixIcon: Icon(Icons.filter_list),
+                border: OutlineInputBorder(),
+              ),
+              items: ['Todas', ...widget.categorias]
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: (val) => setState(() => _filtroCategoria = val),
+            ),
+            const SizedBox(height: 16),
+
+            Expanded(
+              child: _itemsFiltrados.isEmpty
+                  ? const Center(child: Text('No hay productos en la despensa todavía.'))
+                  : ListView.builder(
+                      itemCount: _itemsFiltrados.length,
+                      itemBuilder: (context, index) {
+                        final item = _itemsFiltrados[index];
+                        final sinStock = item.cantidadActual <= 0;
+
+                        return Card(
+                          color: sinStock ? Colors.red.shade50 : null,
+                          child: ListTile(
+                            leading: Icon(
+                              sinStock ? Icons.warning_amber_rounded : Icons.kitchen,
+                              color: sinStock ? Colors.red : Colors.teal,
+                              size: 32,
+                            ),
+                            title: Text(
+                              item.nombre,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: sinStock ? Colors.red : Colors.black,
+                              ),
+                            ),
+                            subtitle: Text('Categoría: ${item.categoria}'),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  sinStock ? 'AGOTADO' : '${item.cantidadActual.toStringAsFixed(1)} ${item.unidad}',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: sinStock ? Colors.red : Colors.teal.shade800,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                                    minimumSize: const Size(60, 28),
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  onPressed: () => _abrirModalConsumo(item),
+                                  icon: const Icon(Icons.remove, size: 16),
+                                  label: const Text('Consumir', style: TextStyle(fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// PESTAÑA 3: GESTIÓN DE TIENDAS, CATEGORÍAS Y CATALOGO
 class GestionCatalogosPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -579,19 +820,18 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Administrar Almacén'),
+          title: const Text('Administrar Catálogos'),
           bottom: const TabBar(
             isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.store), text: 'Tiendas'),
               Tab(icon: Icon(Icons.category), text: 'Categorías'),
-              Tab(icon: Icon(Icons.inventory_2), text: 'Catálogo Almacén'),
+              Tab(icon: Icon(Icons.inventory_2), text: 'Catálogo Base'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            // Pestaña 1: Tiendas
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -602,7 +842,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                         child: TextField(
                           controller: _tiendaNombreController,
                           decoration: const InputDecoration(
-                            labelText: 'Nueva Tienda (ej. Verdulería Don Pedro)',
+                            labelText: 'Nueva Tienda',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -639,8 +879,6 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                 ],
               ),
             ),
-
-            // Pestaña 2: Categorías
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -651,7 +889,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                         child: TextField(
                           controller: _categoriaNombreController,
                           decoration: const InputDecoration(
-                            labelText: 'Nueva Categoría (ej. Mascotas, Baño...)',
+                            labelText: 'Nueva Categoría',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -688,8 +926,6 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                 ],
               ),
             ),
-
-            // Pestaña 3: Catálogo Almacén
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -700,31 +936,25 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Guardar Nuevo Producto en Almacén', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('Guardar Nuevo Producto Base', style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          
                           DropdownButtonFormField<String>(
                             value: _prodCategoriaSeleccionada ?? (widget.categorias.isNotEmpty ? widget.categorias.first : null),
-                            decoration: const InputDecoration(
-                              labelText: 'Categoría',
-                              border: OutlineInputBorder(),
-                            ),
+                            decoration: const InputDecoration(labelText: 'Categoría', border: OutlineInputBorder()),
                             items: widget.categorias
                                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                                 .toList(),
                             onChanged: (val) => setState(() => _prodCategoriaSeleccionada = val),
                           ),
                           const SizedBox(height: 8),
-
                           TextField(
                             controller: _prodNombreController,
                             decoration: const InputDecoration(
-                              labelText: 'Nombre (ej. Lavandina Gel)',
+                              labelText: 'Nombre Producto',
                               border: OutlineInputBorder(),
                             ),
                           ),
                           const SizedBox(height: 8),
-
                           Row(
                             children: [
                               Expanded(
@@ -753,7 +983,6 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                             ],
                           ),
                           const SizedBox(height: 10),
-
                           ElevatedButton.icon(
                             onPressed: _agregarProductoAlmacen,
                             icon: const Icon(Icons.save),
@@ -774,7 +1003,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                           child: ListTile(
                             leading: const Icon(Icons.inventory_2),
                             title: Text(p.nombre),
-                            subtitle: Text('Categoría: ${p.categoria} | Contenido: ${p.cantidadPaquete} ${p.unidad}'),
+                            subtitle: Text('Categoría: ${p.categoria} | Base: ${p.cantidadPaquete} ${p.unidad}'),
                             trailing: IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
                               onPressed: () {
