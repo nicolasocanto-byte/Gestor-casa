@@ -817,7 +817,7 @@ class SimuladorComprasExcelPantalla extends StatefulWidget {
 
 class _DatosCeldaSimulador {
   double? precio;
-  double? cantidadContenido; // ej: 1000 gr o 500 gr, o 320 mts
+  double? cantidadContenido;
   String unidad;
 
   _DatosCeldaSimulador({this.precio, this.cantidadContenido, this.unidad = 'gr'});
@@ -831,10 +831,9 @@ class _DatosCeldaSimulador {
 }
 
 class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPantalla> {
-  int _cantidadColumnas = 2; // Opciones: 2, 3 o 4 comercios
+  int _cantidadColumnas = 2;
   late List<String?> _tiendasSeleccionadas;
 
-  // Guarda datos ingresados: Map< "nombreProducto_colIndex", _DatosCeldaSimulador >
   final Map<String, _DatosCeldaSimulador> _matrizPrecios = {};
 
   final List<Color> _coloresCategorias = [
@@ -848,14 +847,13 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
 
   @override
   void initState() {
-    super.initState() {
-      _tiendasSeleccionadas = [
-        widget.tiendas.isNotEmpty ? widget.tiendas[0] : 'Tienda 1',
-        widget.tiendas.length > 1 ? widget.tiendas[1] : 'Tienda 2',
-        null,
-        null,
-      ];
-    }
+    super.initState();
+    _tiendasSeleccionadas = [
+      widget.tiendas.isNotEmpty ? widget.tiendas[0] : 'Tienda 1',
+      widget.tiendas.length > 1 ? widget.tiendas[1] : 'Tienda 2',
+      null,
+      null,
+    ];
   }
 
   Color _obtenerColorCategoria(String cat) {
@@ -964,7 +962,6 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
       ),
       body: Column(
         children: [
-          // Control para elegir 2, 3 o 4 comercios
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Card(
@@ -995,7 +992,6 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
             ),
           ),
 
-          // TABLA EXCEL COMPARATIVA CON SCROLL HORIZONTAL
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -1003,7 +999,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
                   child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
+                    headingRowColor: MaterialStateProperty.all(Colors.teal.shade100),
                     columnSpacing: 16,
                     dataRowMinHeight: 48,
                     columns: [
@@ -1017,7 +1013,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
                               isExpanded: true,
                               decoration: const InputDecoration(border: InputBorder.none),
                               items: widget.tiendas
-                                  .map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextSpanOverflow.ellipsis)))
+                                  .map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis)))
                                   .toList(),
                               onChanged: (val) => setState(() => _tiendasSeleccionadas[col] = val),
                               hint: Text('Tienda ${col + 1}'),
@@ -1039,17 +1035,15 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
   List<DataRow> _generarFilasExcel() {
     final List<DataRow> filas = [];
 
-    // Agrupar catálogo por categorías
     final Map<String, List<ProductoAlmacen>> porCategoria = {};
     for (var prod in widget.catalogo) {
       porCategoria.putIfAbsent(prod.categoria, () => []).add(prod);
     }
 
     porCategoria.forEach((categoria, productos) {
-      // Fila de encabezado de categoría con color propio
       filas.add(
         DataRow(
-          color: WidgetStateProperty.all(_obtenerColorCategoria(categoria)),
+          color: MaterialStateProperty.all(_obtenerColorCategoria(categoria)),
           cells: [
             DataCell(
               Text(
@@ -1062,9 +1056,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
         ),
       );
 
-      // Filas de productos dentro de la categoría
       for (var prod in productos) {
-        // Encontrar precios base unitarios cargados en cada columna para este producto
         double? menorPrecioBase = double.infinity;
         double? mayorPrecioBase = -1.0;
 
@@ -1171,7 +1163,6 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
 
   @override
   Widget build(BuildContext context) {
-    // Obtener la lista unificada de nombres de productos de ambos tickets
     final Set<String> nombresProductos = {};
     if (_ticketA != null) {
       for (var p in _ticketA!.productos) {
@@ -1191,7 +1182,6 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
       ),
       body: Column(
         children: [
-          // Selectores de los 2 tickets
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Card(
@@ -1209,7 +1199,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
                               border: OutlineInputBorder(),
                             ),
                             items: widget.tickets
-                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextSpanOverflow.ellipsis)))
+                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextOverflow.ellipsis)))
                                 .toList(),
                             onChanged: (val) => setState(() => _ticketA = val),
                             hint: const Text('Elegir Ticket 1'),
@@ -1228,7 +1218,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
                               border: OutlineInputBorder(),
                             ),
                             items: widget.tickets
-                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextSpanOverflow.ellipsis)))
+                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextOverflow.ellipsis)))
                                 .toList(),
                             onChanged: (val) => setState(() => _ticketB = val),
                             hint: const Text('Elegir Ticket 2'),
@@ -1242,7 +1232,6 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
             ),
           ),
 
-          // TABLA EXCEL DE COMPARACIÓN
           Expanded(
             child: (_ticketA == null && _ticketB == null)
                 ? const Center(child: Text('Selecciona dos tickets arriba para realizar la comparación producto por producto.'))
@@ -1252,7 +1241,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
                         child: DataTable(
-                          headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
+                          headingRowColor: MaterialStateProperty.all(Colors.teal.shade100),
                           columnSpacing: 20,
                           columns: [
                             const DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -1280,15 +1269,15 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
 
                             if (enAmbos) {
                               if (prodA!.precioPorUnidadBase < prodB!.precioPorUnidadBase) {
-                                fondoA = Colors.green.shade100; // Más barato A
-                                fondoB = Colors.red.shade100; // Más caro B
+                                fondoA = Colors.green.shade100;
+                                fondoB = Colors.red.shade100;
                               } else if (prodA.precioPorUnidadBase > prodB.precioPorUnidadBase) {
-                                fondoA = Colors.red.shade100; // Más caro A
-                                fondoB = Colors.green.shade100; // Más barato B
+                                fondoA = Colors.red.shade100;
+                                fondoB = Colors.green.shade100;
                               }
                             } else {
-                              if (prodA != null) fondoA = Colors.grey.shade200; // No se repite
-                              if (prodB != null) fondoB = Colors.grey.shade200; // No se repite
+                              if (prodA != null) fondoA = Colors.grey.shade200;
+                              if (prodB != null) fondoB = Colors.grey.shade200;
                             }
 
                             return DataRow(
