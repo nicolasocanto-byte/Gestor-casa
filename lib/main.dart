@@ -22,18 +22,20 @@ class MiAppCasa extends StatelessWidget {
 }
 
 // MODELOS DE DATOS
-class Alimento {
+class ProductoAlmacen {
   final String nombre;
-  final double cantidadPaquete; // ej. 500, 1, 250
+  final double cantidadPaquete;
   final String unidad; // 'gr', 'kg', 'ml', 'L', 'un'
+  final String categoria;
 
-  Alimento({
+  ProductoAlmacen({
     required this.nombre,
     required this.cantidadPaquete,
     required this.unidad,
+    required this.categoria,
   });
 
-  String get descripcionCompleta => '$nombre ($cantidadPaquete $unidad)';
+  String get descripcionCompleta => '[$categoria] $nombre ($cantidadPaquete $unidad)';
 }
 
 class ProductoCompra {
@@ -43,6 +45,7 @@ class ProductoCompra {
   final double cantidadPorPaquete;
   final String unidad;
   final double precioUnitarioPaquete;
+  final String categoria;
 
   ProductoCompra({
     required this.nombre,
@@ -51,6 +54,7 @@ class ProductoCompra {
     required this.cantidadPorPaquete,
     required this.unidad,
     required this.precioUnitarioPaquete,
+    required this.categoria,
   });
 
   double get subtotal => paquetesComprados * precioUnitarioPaquete;
@@ -68,13 +72,16 @@ class PantallaNavegacionPrincipal extends StatefulWidget {
 class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipal> {
   int _indicePestana = 0;
 
-  // Listas de datos guardados
+  // Listas de datos guardados por defecto
   final List<String> _tiendasGuardadas = ['Supermercado Coto', 'Verdulería del Barrio', 'Carrefour'];
-  final List<Alimento> _alimentosGuardados = [
-    Alimento(nombre: 'Fideos Moñito', cantidadPaquete: 500, unidad: 'gr'),
-    Alimento(nombre: 'Leche Entera', cantidadPaquete: 1, unidad: 'L'),
-    Alimento(nombre: 'Huevos Maple', cantidadPaquete: 30, unidad: 'un'),
-    Alimento(nombre: 'Arroz Integral', cantidadPaquete: 1, unidad: 'kg'),
+  final List<String> _categoriasGuardadas = ['Alimentos', 'Limpieza', 'Bebidas', 'Higiene y Perfumería'];
+  
+  final List<ProductoAlmacen> _catalogoAlmacen = [
+    ProductoAlmacen(nombre: 'Fideos Moñito', cantidadPaquete: 500, unidad: 'gr', categoria: 'Alimentos'),
+    ProductoAlmacen(nombre: 'Leche Entera', cantidadPaquete: 1, unidad: 'L', categoria: 'Bebidas'),
+    ProductoAlmacen(nombre: 'Detergente Lavavajillas', cantidadPaquete: 750, unidad: 'ml', categoria: 'Limpieza'),
+    ProductoAlmacen(nombre: 'Jabón Líquido Ropa', cantidadPaquete: 3, unidad: 'L', categoria: 'Limpieza'),
+    ProductoAlmacen(nombre: 'Papel Higiénico (4 rollos)', cantidadPaquete: 4, unidad: 'un', categoria: 'Higiene y Perfumería'),
   ];
 
   @override
@@ -82,11 +89,13 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
     final paginas = [
       RegistroComprasPantalla(
         tiendas: _tiendasGuardadas,
-        alimentos: _alimentosGuardados,
+        categorias: _categoriasGuardadas,
+        catalogo: _catalogoAlmacen,
       ),
       GestionCatalogosPantalla(
         tiendas: _tiendasGuardadas,
-        alimentos: _alimentosGuardados,
+        categorias: _categoriasGuardadas,
+        catalogo: _catalogoAlmacen,
         onActualizar: () => setState(() {}),
       ),
     ];
@@ -98,7 +107,7 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         onTap: (index) => setState(() => _indicePestana = index),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Registrar Compra'),
-          BottomNavigationBarItem(icon: Icon(Icons.storefront), label: 'Tiendas y Alimentos'),
+          BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Tiendas y Almacén'),
         ],
       ),
     );
@@ -108,12 +117,14 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
 // PESTAÑA 1: REGISTRO DE COMPRAS
 class RegistroComprasPantalla extends StatefulWidget {
   final List<String> tiendas;
-  final List<Alimento> alimentos;
+  final List<String> categorias;
+  final List<ProductoAlmacen> catalogo;
 
   const RegistroComprasPantalla({
     super.key,
     required this.tiendas,
-    required this.alimentos,
+    required this.categorias,
+    required this.catalogo,
   });
 
   @override
@@ -122,7 +133,8 @@ class RegistroComprasPantalla extends StatefulWidget {
 
 class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   String? _tiendaSeleccionada;
-  Alimento? _alimentoSeleccionado;
+  String? _categoriaFiltro;
+  ProductoAlmacen? _productoSeleccionado;
 
   final _nombreManualController = TextEditingController();
   final _paquetesController = TextEditingController(text: '1');
@@ -131,17 +143,19 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   final _descuentoController = TextEditingController();
 
   String _unidadSeleccionada = 'gr';
+  String _categoriaSeleccionada = 'Alimentos';
   final List<String> _unidadesDisponibles = ['gr', 'kg', 'ml', 'L', 'un'];
   final List<ProductoCompra> _productosTicket = [];
   bool _descuentoEnPorcentaje = true;
 
-  void _alSeleccionarAlimento(Alimento? alimento) {
-    if (alimento != null) {
+  void _alSeleccionarProducto(ProductoAlmacen? prod) {
+    if (prod != null) {
       setState(() {
-        _alimentoSeleccionado = alimento;
-        _nombreManualController.text = alimento.nombre;
-        _tamanoPaqueteController.text = alimento.cantidadPaquete.toString();
-        _unidadSeleccionada = alimento.unidad;
+        _productoSeleccionado = prod;
+        _nombreManualController.text = prod.nombre;
+        _tamanoPaqueteController.text = prod.cantidadPaquete.toString();
+        _unidadSeleccionada = prod.unidad;
+        _categoriaSeleccionada = prod.categoria;
       });
     }
   }
@@ -158,7 +172,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
       return;
     }
     if (nombre.isEmpty || paquetes <= 0 || tamanoPaquete <= 0 || precio <= 0) {
-      _mostrarMensaje('Completa el nombre, cantidad de paquetes, tamaño y precio.');
+      _mostrarMensaje('Completa nombre, paquetes, contenido y precio.');
       return;
     }
 
@@ -170,9 +184,10 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
         cantidadPorPaquete: tamanoPaquete,
         unidad: _unidadSeleccionada,
         precioUnitarioPaquete: precio,
+        categoria: _categoriaSeleccionada,
       ));
 
-      _alimentoSeleccionado = null;
+      _productoSeleccionado = null;
       _nombreManualController.clear();
       _tamanoPaqueteController.clear();
       _precioPaqueteController.clear();
@@ -201,6 +216,13 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
     final proporcion = prod.subtotal / _subtotalGeneral;
     final descuentoProd = _montoDescuentoTotal * proporcion;
     return (prod.subtotal - descuentoProd) / prod.paquetesComprados;
+  }
+
+  List<ProductoAlmacen> get _productosFiltrados {
+    if (_categoriaFiltro == null || _categoriaFiltro == 'Todas') {
+      return widget.catalogo;
+    }
+    return widget.catalogo.where((p) => p.categoria == _categoriaFiltro).toList();
   }
 
   @override
@@ -241,26 +263,48 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Añadir Producto', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const Text('Añadir Producto al Ticket', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 10),
 
-                    // Selector de plantilla guardada
-                    if (widget.alimentos.isNotEmpty) ...[
-                      DropdownButtonFormField<Alimento>(
-                        value: _alimentoSeleccionado,
-                        decoration: const InputDecoration(
-                          labelText: 'Elegir del Catálogo Guardado',
-                          prefixIcon: Icon(Icons.fastfood),
-                          border: OutlineInputBorder(),
+                    // Filtro por categoría para catálogo
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _categoriaFiltro ?? 'Todas',
+                            decoration: const InputDecoration(
+                              labelText: 'Filtrar Catálogo',
+                              prefixIcon: Icon(Icons.filter_list),
+                              border: OutlineInputBorder(),
+                            ),
+                            items: ['Todas', ...widget.categorias]
+                                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                                .toList(),
+                            onChanged: (val) => setState(() {
+                              _categoriaFiltro = val;
+                              _productoSeleccionado = null;
+                            }),
+                          ),
                         ),
-                        items: widget.alimentos
-                            .map((a) => DropdownMenuItem(value: a, child: Text(a.descripcionCompleta)))
-                            .toList(),
-                        onChanged: _alSeleccionarAlimento,
-                        hint: const Text('Cargar alimento rápido...'),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Selector del producto guardado
+                    DropdownButtonFormField<ProductoAlmacen>(
+                      value: _productoSeleccionado,
+                      decoration: const InputDecoration(
+                        labelText: 'Cargar desde Almacén',
+                        prefixIcon: Icon(Icons.inventory),
+                        border: OutlineInputBorder(),
                       ),
-                      const SizedBox(height: 10),
-                    ],
+                      items: _productosFiltrados
+                          .map((p) => DropdownMenuItem(value: p, child: Text(p.descripcionCompleta)))
+                          .toList(),
+                      onChanged: _alSeleccionarProducto,
+                      hint: const Text('Buscar producto guardado...'),
+                    ),
+                    const SizedBox(height: 10),
 
                     TextField(
                       controller: _nombreManualController,
@@ -289,10 +333,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                           flex: 1,
                           child: DropdownButtonFormField<String>(
                             value: _unidadSeleccionada,
-                            decoration: const InputDecoration(
-                              labelText: 'Unid.',
-                              border: OutlineInputBorder(),
-                            ),
+                            decoration: const InputDecoration(labelText: 'Unid.', border: OutlineInputBorder()),
                             items: _unidadesDisponibles
                                 .map((u) => DropdownMenuItem(value: u, child: Text(u)))
                                 .toList(),
@@ -363,10 +404,10 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
 
                       return Card(
                         child: ListTile(
-                          title: Text('${prod.nombre} (x${prod.paquetesComprados} de ${prod.cantidadPorPaquete}${prod.unidad})'),
+                          title: Text('[${prod.categoria}] ${prod.nombre} (x${prod.paquetesComprados})'),
                           subtitle: Text(
                             'Original: \$${prod.precioUnitarioPaquete.toStringAsFixed(2)} c/u\n'
-                            'Con desc.: \$${precioFinalPaquete.toStringAsFixed(2)} c/u (Total: ${prod.cantidadTotalProd} ${prod.unidad})',
+                            'Con desc.: \$${precioFinalPaquete.toStringAsFixed(2)} c/u (${prod.cantidadTotalProd} ${prod.unidad} total)',
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -461,16 +502,18 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   }
 }
 
-// PESTAÑA 2: GESTIÓN DE TIENDAS Y ALIMENTOS
+// PESTAÑA 2: GESTIÓN DE TIENDAS, CATEGORÍAS Y ALMACÉN
 class GestionCatalogosPantalla extends StatefulWidget {
   final List<String> tiendas;
-  final List<Alimento> alimentos;
+  final List<String> categorias;
+  final List<ProductoAlmacen> catalogo;
   final VoidCallback onActualizar;
 
   const GestionCatalogosPantalla({
     super.key,
     required this.tiendas,
-    required this.alimentos,
+    required this.categorias,
+    required this.catalogo,
     required this.onActualizar,
   });
 
@@ -480,9 +523,12 @@ class GestionCatalogosPantalla extends StatefulWidget {
 
 class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
   final _tiendaNombreController = TextEditingController();
-  final _alimentoNombreController = TextEditingController();
-  final _alimentoCantidadController = TextEditingController();
-  String _unidadSeleccionada = 'gr';
+  final _categoriaNombreController = TextEditingController();
+
+  final _prodNombreController = TextEditingController();
+  final _prodCantidadController = TextEditingController();
+  String _prodUnidad = 'gr';
+  String? _prodCategoriaSeleccionada;
   final List<String> _unidades = ['gr', 'kg', 'ml', 'L', 'un'];
 
   void _agregarTienda() {
@@ -496,19 +542,32 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
     }
   }
 
-  void _agregarAlimento() {
-    final nombre = _alimentoNombreController.text.trim();
-    final cantidad = double.tryParse(_alimentoCantidadController.text.trim().replaceAll(',', '.')) ?? 0.0;
+  void _agregarCategoria() {
+    final nombre = _categoriaNombreController.text.trim();
+    if (nombre.isNotEmpty && !widget.categorias.contains(nombre)) {
+      setState(() {
+        widget.categorias.add(nombre);
+        _categoriaNombreController.clear();
+      });
+      widget.onActualizar();
+    }
+  }
+
+  void _agregarProductoAlmacen() {
+    final nombre = _prodNombreController.text.trim();
+    final cantidad = double.tryParse(_prodCantidadController.text.trim().replaceAll(',', '.')) ?? 0.0;
+    final cat = _prodCategoriaSeleccionada ?? (widget.categorias.isNotEmpty ? widget.categorias.first : 'General');
 
     if (nombre.isNotEmpty && cantidad > 0) {
       setState(() {
-        widget.alimentos.add(Alimento(
+        widget.catalogo.add(ProductoAlmacen(
           nombre: nombre,
           cantidadPaquete: cantidad,
-          unidad: _unidadSeleccionada,
+          unidad: _prodUnidad,
+          categoria: cat,
         ));
-        _alimentoNombreController.clear();
-        _alimentoCantidadController.clear();
+        _prodNombreController.clear();
+        _prodCantidadController.clear();
       });
       widget.onActualizar();
     }
@@ -517,20 +576,22 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Administrar Catálogos'),
+          title: const Text('Administrar Almacén'),
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.store), text: 'Tiendas'),
-              Tab(icon: Icon(Icons.fastfood), text: 'Alimentos'),
+              Tab(icon: Icon(Icons.category), text: 'Categorías'),
+              Tab(icon: Icon(Icons.inventory_2), text: 'Catálogo Almacén'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            // Pestaña Tiendas
+            // Pestaña 1: Tiendas
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -541,7 +602,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                         child: TextField(
                           controller: _tiendaNombreController,
                           decoration: const InputDecoration(
-                            labelText: 'Nueva Tienda (ej. Verdulería Juan)',
+                            labelText: 'Nueva Tienda (ej. Verdulería Don Pedro)',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -579,7 +640,56 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
               ),
             ),
 
-            // Pestaña Alimentos
+            // Pestaña 2: Categorías
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _categoriaNombreController,
+                          decoration: const InputDecoration(
+                            labelText: 'Nueva Categoría (ej. Mascotas, Baño...)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        onPressed: _agregarCategoria,
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: widget.categorias.length,
+                      itemBuilder: (context, index) {
+                        final cat = widget.categorias[index];
+                        return Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.category),
+                            title: Text(cat),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () {
+                                setState(() => widget.categorias.removeAt(index));
+                                widget.onActualizar();
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Pestaña 3: Catálogo Almacén
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -590,25 +700,40 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Guardar Nuevo Alimento', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('Guardar Nuevo Producto en Almacén', style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          TextField(
-                            controller: _alimentoNombreController,
+                          
+                          DropdownButtonFormField<String>(
+                            value: _prodCategoriaSeleccionada ?? (widget.categorias.isNotEmpty ? widget.categorias.first : null),
                             decoration: const InputDecoration(
-                              labelText: 'Nombre (ej. Fideos Lucchetti)',
+                              labelText: 'Categoría',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: widget.categorias
+                                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                                .toList(),
+                            onChanged: (val) => setState(() => _prodCategoriaSeleccionada = val),
+                          ),
+                          const SizedBox(height: 8),
+
+                          TextField(
+                            controller: _prodNombreController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre (ej. Lavandina Gel)',
                               border: OutlineInputBorder(),
                             ),
                           ),
                           const SizedBox(height: 8),
+
                           Row(
                             children: [
                               Expanded(
                                 flex: 2,
                                 child: TextField(
-                                  controller: _alimentoCantidadController,
+                                  controller: _prodCantidadController,
                                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                   decoration: const InputDecoration(
-                                    labelText: 'Tamaño Paquete',
+                                    labelText: 'Contenido Base',
                                     border: OutlineInputBorder(),
                                   ),
                                 ),
@@ -617,21 +742,22 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                               Expanded(
                                 flex: 1,
                                 child: DropdownButtonFormField<String>(
-                                  value: _unidadSeleccionada,
+                                  value: _prodUnidad,
                                   decoration: const InputDecoration(border: OutlineInputBorder()),
                                   items: _unidades.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
                                   onChanged: (val) {
-                                    if (val != null) setState(() => _unidadSeleccionada = val);
+                                    if (val != null) setState(() => _prodUnidad = val);
                                   },
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 10),
+
                           ElevatedButton.icon(
-                            onPressed: _agregarAlimento,
+                            onPressed: _agregarProductoAlmacen,
                             icon: const Icon(Icons.save),
-                            label: const Text('Guardar Alimento en Catálogo'),
+                            label: const Text('Guardar en Catálogo'),
                             style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
                           ),
                         ],
@@ -641,18 +767,18 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                   const SizedBox(height: 12),
                   Expanded(
                     child: ListView.builder(
-                      itemCount: widget.alimentos.length,
+                      itemCount: widget.catalogo.length,
                       itemBuilder: (context, index) {
-                        final a = widget.alimentos[index];
+                        final p = widget.catalogo[index];
                         return Card(
                           child: ListTile(
-                            leading: const Icon(Icons.fastfood),
-                            title: Text(a.nombre),
-                            subtitle: Text('Tamaño base: ${a.cantidadPaquete} ${a.unidad}'),
+                            leading: const Icon(Icons.inventory_2),
+                            title: Text(p.nombre),
+                            subtitle: Text('Categoría: ${p.categoria} | Contenido: ${p.cantidadPaquete} ${p.unidad}'),
                             trailing: IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
                               onPressed: () {
-                                setState(() => widget.alimentos.removeAt(index));
+                                setState(() => widget.catalogo.removeAt(index));
                                 widget.onActualizar();
                               },
                             ),
