@@ -97,6 +97,20 @@ class TicketCompra {
   });
 }
 
+class ItemSimulado {
+  final String nombre;
+  int cantidadPaquetes;
+  final String unidad;
+  final String categoria;
+
+  ItemSimulado({
+    required this.nombre,
+    required this.cantidadPaquetes,
+    required this.unidad,
+    required this.categoria,
+  });
+}
+
 // NAVEGACIÓN PRINCIPAL
 class PantallaNavegacionPrincipal extends StatefulWidget {
   const PantallaNavegacionPrincipal({super.key});
@@ -122,7 +136,6 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
     ItemDespensa(nombre: 'Leche Entera', cantidadActual: 2, unidad: 'L', categoria: 'Bebidas'),
   ];
 
-  // Histórico de tickets registrados
   final List<TicketCompra> _historicoTickets = [];
 
   void _ingresarCompra(TicketCompra ticket) {
@@ -162,6 +175,11 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         categorias: _categoriasGuardadas,
         onActualizar: () => setState(() {}),
       ),
+      SimuladorComprasPantalla(
+        tiendas: _tiendasGuardadas,
+        catalogo: _catalogoAlmacen,
+        tickets: _historicoTickets,
+      ),
       EstadisticasComparadorPantalla(
         tickets: _historicoTickets,
         categorias: _categoriasGuardadas,
@@ -187,6 +205,7 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Comprar'),
           BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: 'Despensa'),
+          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart_checkout), label: 'Simulador'),
           BottomNavigationBarItem(icon: Icon(Icons.analytics), label: 'Estadísticas'),
           BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Catálogos'),
         ],
@@ -784,7 +803,240 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
   }
 }
 
-// PESTAÑA 3: ESTADÍSTICAS Y COMPARADOR DE PRECIOS
+// PESTAÑA 3: SIMULADOR Y COMPARADOR DE CESTA DE COMPRAS
+class SimuladorComprasPantalla extends StatefulWidget {
+  final List<String> tiendas;
+  final List<ProductoAlmacen> catalogo;
+  final List<TicketCompra> tickets;
+
+  const SimuladorComprasPantalla({
+    super.key,
+    required this.tiendas,
+    required this.catalogo,
+    required this.tickets,
+  });
+
+  @override
+  State<SimuladorComprasPantalla> createState() => _SimuladorComprasPantallaState();
+}
+
+class _SimuladorComprasPantallaState extends State<SimuladorComprasPantalla> {
+  ProductoAlmacen? _productoSeleccionado;
+  final List<ItemSimulado> _listaSimulada = [];
+
+  void _agregarAListaSimulada(ProductoAlmacen prod) {
+    setState(() {
+      final idx = _listaSimulada.indexWhere((i) => i.nombre.toLowerCase() == prod.nombre.toLowerCase());
+      if (idx >= 0) {
+        _listaSimulada[idx].cantidadPaquetes += 1;
+      } else {
+        _listaSimulada.add(ItemSimulado(
+          nombre: prod.nombre,
+          cantidadPaquetes: 1,
+          unidad: prod.unidad,
+          categoria: prod.categoria,
+        ));
+      }
+    });
+  }
+
+  double? _obtenerUltimoPrecio(String nombreProd, String tienda) {
+    for (var ticket in widget.tickets.reversed) {
+      if (ticket.tienda == tienda) {
+        for (var p in ticket.productos) {
+          if (p.nombre.toLowerCase() == nombreProd.toLowerCase()) {
+            return p.precioUnitarioPaquete;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, double> costoPorTienda = {};
+    final Map<String, int> productosFaltantesPorTienda = {};
+
+    for (var tienda in widget.tiendas) {
+      double totalTienda = 0.0;
+      int faltantes = 0;
+
+      for (var item in _listaSimulada) {
+        final precio = _obtenerUltimoPrecio(item.nombre, tienda);
+        if (precio != null) {
+          totalTienda += precio * item.cantidadPaquetes;
+        } else {
+          faltantes++;
+        }
+      }
+
+      costoPorTienda[tienda] = totalTienda;
+      productosFaltantesPorTienda[tienda] = faltantes;
+    }
+
+    String? tiendaMasBarata;
+    double menorCosto = double.infinity;
+
+    costoPorTienda.forEach((tienda, costo) {
+      if (costo > 0 && costo < menorCosto && (productosFaltantesPorTienda[tienda] == 0)) {
+        menorCosto = costo;
+        tiendaMasBarata = tienda;
+      }
+    });
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Simulador de Cesta de Compras'),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Simular Lista de Compras:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<ProductoAlmacen>(
+                      value: _productoSeleccionado,
+                      decoration: const InputDecoration(
+                        labelText: 'Agregar producto a la simulación',
+                        prefixIcon: Icon(Icons.add_shopping_cart),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: widget.catalogo
+                          .map((p) => DropdownMenuItem(value: p, child: Text(p.descripcionCompleta)))
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          _agregarAListaSimulada(val);
+                          setState(() => _productoSeleccionado = null);
+                        }
+                      },
+                      hint: const Text('Seleccionar del catálogo...'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            const Text('Cesta a Cotizar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 8),
+
+            _listaSimulada.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Center(child: Text('Agrega productos arriba para comparar presupuestos entre tiendas.')),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _listaSimulada.length,
+                    itemBuilder: (context, index) {
+                      final item = _listaSimulada[index];
+                      return Card(
+                        child: ListTile(
+                          title: Text(item.nombre),
+                          subtitle: Text('Categoría: ${item.categoria}'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline),
+                                onPressed: () {
+                                  setState(() {
+                                    if (item.cantidadPaquetes > 1) {
+                                      item.cantidadPaquetes--;
+                                    } else {
+                                      _listaSimulada.removeAt(index);
+                                    }
+                                  });
+                                },
+                              ),
+                              Text('x${item.cantidadPaquetes}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline),
+                                onPressed: () => setState(() => item.cantidadPaquetes++),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+            const SizedBox(height: 16),
+
+            if (_listaSimulada.isNotEmpty) ...[
+              const Text('Comparativa de Presupuesto por Tienda:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+
+              ...widget.tiendas.map((tienda) {
+                final total = costoPorTienda[tienda] ?? 0.0;
+                final faltantes = productosFaltantesPorTienda[tienda] ?? 0;
+                final esMasBarata = tienda == tiendaMasBarata;
+
+                return Card(
+                  color: esMasBarata ? Colors.green.shade50 : null,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Text(tienda, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                if (esMasBarata) ...[
+                                  const SizedBox(width: 8),
+                                  Chip(
+                                    label: const Text('¡MÁS BARATO!', style: TextStyle(color: Colors.white, fontSize: 11)),
+                                    backgroundColor: Colors.green,
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                ],
+                              ],
+                            ),
+                            Text(
+                              '\$${total.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: esMasBarata ? Colors.green.shade800 : Colors.teal,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (faltantes > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              'Nota: Hay $faltantes producto(s) sin precio histórico en esta tienda.',
+                              style: const TextStyle(color: Colors.orange, fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// PESTAÑA 4: ESTADÍSTICAS, COMPARADOR Y FILTROS TEMPORALES
 class EstadisticasComparadorPantalla extends StatefulWidget {
   final List<TicketCompra> tickets;
   final List<String> categorias;
@@ -804,13 +1056,39 @@ class EstadisticasComparadorPantalla extends StatefulWidget {
 }
 
 class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorPantalla> {
-  String? _productoParaComparar;
+  String _filtroPeriodo = 'Este Mes';
+  final List<String> _opcionesPeriodo = ['Esta Semana', 'Este Mes', 'Mes Anterior', 'Todo el Histórico'];
 
-  double get _gastoTotalAcumulado => widget.tickets.fold(0, (sum, t) => sum + t.totalFinal);
+  String? _productoParaComparar;
+  String? _tiendaParaComparar;
+
+  // Comparativa de Meses
+  String? _mesComparar1;
+  String? _mesComparar2;
+
+  List<TicketCompra> get _ticketsFiltrados {
+    final ahora = DateTime.now();
+    return widget.tickets.where((t) {
+      if (_filtroPeriodo == 'Esta Semana') {
+        final inicioSemana = ahora.subtract(Duration(days: ahora.weekday - 1));
+        final fechaTicketSinHora = DateTime(t.fecha.year, t.fecha.month, t.fecha.day);
+        final inicioSemanaSinHora = DateTime(inicioSemana.year, inicioSemana.month, inicioSemana.day);
+        return fechaTicketSinHora.isAfter(inicioSemanaSinHora.subtract(const Duration(days: 1)));
+      } else if (_filtroPeriodo == 'Este Mes') {
+        return t.fecha.year == ahora.year && t.fecha.month == ahora.month;
+      } else if (_filtroPeriodo == 'Mes Anterior') {
+        final mesAnterior = DateTime(ahora.year, ahora.month - 1);
+        return t.fecha.year == mesAnterior.year && t.fecha.month == mesAnterior.month;
+      }
+      return true; // Todo el histórico
+    }).toList();
+  }
+
+  double get _gastoTotalFiltrado => _ticketsFiltrados.fold(0, (sum, t) => sum + t.totalFinal);
 
   Map<String, double> get _gastosPorCategoria {
     final Map<String, double> mapa = {};
-    for (var t in widget.tickets) {
+    for (var t in _ticketsFiltrados) {
       for (var p in t.productos) {
         mapa[p.categoria] = (mapa[p.categoria] ?? 0) + p.subtotal;
       }
@@ -820,10 +1098,31 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
 
   Map<String, double> get _gastosPorTienda {
     final Map<String, double> mapa = {};
-    for (var t in widget.tickets) {
+    for (var t in _ticketsFiltrados) {
       mapa[t.tienda] = (mapa[t.tienda] ?? 0) + t.totalFinal;
     }
     return mapa;
+  }
+
+  List<String> get _listaMesesDisponibles {
+    final Set<String> meses = {};
+    for (var t in widget.tickets) {
+      final mesStr = '${t.fecha.month.toString().padLeft(2, '0')}/${t.fecha.year}';
+      meses.add(mesStr);
+    }
+    return meses.toList();
+  }
+
+  double _calcularGastoDeUnMes(String? mesAnio) {
+    if (mesAnio == null) return 0.0;
+    final partes = mesAnio.split('/');
+    if (partes.length < 2) return 0.0;
+    final mes = int.tryParse(partes[0]) ?? 0;
+    final anio = int.tryParse(partes[1]) ?? 0;
+
+    return widget.tickets
+        .where((t) => t.fecha.month == mes && t.fecha.year == anio)
+        .fold(0.0, (sum, t) => sum + t.totalFinal);
   }
 
   List<ProductoCompra> get _historialDelProductoSeleccionado {
@@ -839,9 +1138,19 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
     return prods;
   }
 
+  List<TicketCompra> get _ticketsDelComercioSeleccionado {
+    if (_tiendaParaComparar == null) return [];
+    final list = widget.tickets.where((t) => t.tienda == _tiendaParaComparar).toList();
+    list.sort((a, b) => b.fecha.compareTo(a.fecha));
+    return list;
+  }
+
+  String _formatearFecha(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Obtener nombres de todos los productos que han sido comprados o están en catálogo
     final nombresProductos = widget.catalogo.map((p) => p.nombre).toSet();
     for (var t in widget.tickets) {
       for (var p in t.productos) {
@@ -849,27 +1158,55 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
       }
     }
 
+    final ticketsComercio = _ticketsDelComercioSeleccionado;
+    final mesesDisponibles = _listaMesesDisponibles;
+
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Estadísticas y Comparador'),
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
-              Tab(icon: Icon(Icons.pie_chart), text: 'Gastos'),
-              Tab(icon: Icon(Icons.compare_arrows), text: 'Comparar Precios'),
+              Tab(icon: Icon(Icons.pie_chart), text: 'Gastos y Períodos'),
+              Tab(icon: Icon(Icons.shopping_bag), text: 'Por Producto'),
+              Tab(icon: Icon(Icons.receipt), text: 'Por Ticket / Comercio'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            // Sub-Pestaña 1: Resumen de Gastos
+            // SUB-PESTAÑA 1: GASTOS Y FILTROS POR PERÍODO
             SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Selector de período
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: DropdownButtonFormField<String>(
+                        value: _filtroPeriodo,
+                        decoration: const InputDecoration(
+                          labelText: 'Filtrar Gastos por Período',
+                          prefixIcon: Icon(Icons.calendar_month),
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _opcionesPeriodo
+                            .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _filtroPeriodo = val);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Tarjeta de gasto total del período
                   Card(
                     color: Colors.teal.shade700,
                     child: Padding(
@@ -877,9 +1214,9 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Gasto Total Registrado:', style: TextStyle(color: Colors.white, fontSize: 16)),
+                          Text('Gasto ($_filtroPeriodo):', style: const TextStyle(color: Colors.white, fontSize: 16)),
                           Text(
-                            '\$${_gastoTotalAcumulado.toStringAsFixed(2)}',
+                            '\$${_gastoTotalFiltrado.toStringAsFixed(2)}',
                             style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                           ),
                         ],
@@ -888,13 +1225,94 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
                   ),
                   const SizedBox(height: 16),
 
+                  // MÓDULO COMPARADOR ENTRE DOS MESES DISTINTOS
+                  Card(
+                    color: Colors.teal.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Comparar Gastos entre Meses:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _mesComparar1,
+                                  decoration: const InputDecoration(labelText: 'Mes A', border: OutlineInputBorder()),
+                                  items: mesesDisponibles.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                                  onChanged: (val) => setState(() => _mesComparar1 = val),
+                                  hint: const Text('Mes 1'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _mesComparar2,
+                                  decoration: const InputDecoration(labelText: 'Mes B', border: OutlineInputBorder()),
+                                  items: mesesDisponibles.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                                  onChanged: (val) => setState(() => _mesComparar2 = val),
+                                  hint: const Text('Mes 2'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_mesComparar1 != null && _mesComparar2 != null) ...[
+                            const SizedBox(height: 12),
+                            Builder(
+                              builder: (context) {
+                                final gasto1 = _calcularGastoDeUnMes(_mesComparar1);
+                                final gasto2 = _calcularGastoDeUnMes(_mesComparar2);
+                                final diff = gasto1 - gasto2;
+                                final porc = gasto2 > 0 ? (diff / gasto2) * 100 : 0.0;
+                                final gastoMayor = diff > 0;
+
+                                return Column(
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('Total $_mesComparar1: \$${gasto1.toStringAsFixed(2)}'),
+                                        Text('Total $_mesComparar2: \$${gasto2.toStringAsFixed(2)}'),
+                                      ],
+                                    ),
+                                    const Divider(),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          gastoMayor ? Icons.trending_up : Icons.trending_down,
+                                          color: gastoMayor ? Colors.red : Colors.green,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Diferencia: ${gastoMayor ? "+" : ""}\$${diff.toStringAsFixed(2)} (${porc.toStringAsFixed(1)}%)',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: gastoMayor ? Colors.red.shade800 : Colors.green.shade800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Gastos por Categoría
                   const Text('Gastos por Categoría:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 8),
                   _gastosPorCategoria.isEmpty
-                      ? const Text('Sin compras registradas.')
+                      ? const Text('Sin compras en este período.')
                       : Column(
                           children: _gastosPorCategoria.entries.map((e) {
-                            final porcentaje = _gastoTotalAcumulado > 0 ? (e.value / _gastoTotalAcumulado) : 0.0;
+                            final porcentaje = _gastoTotalFiltrado > 0 ? (e.value / _gastoTotalFiltrado) : 0.0;
                             return Card(
                               child: Padding(
                                 padding: const EdgeInsets.all(12.0),
@@ -918,13 +1336,14 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
                         ),
                   const SizedBox(height: 16),
 
+                  // Gastos por Tienda
                   const Text('Gastos por Tienda:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 8),
                   _gastosPorTienda.isEmpty
-                      ? const Text('Sin compras registradas.')
+                      ? const Text('Sin compras en este período.')
                       : Column(
                           children: _gastosPorTienda.entries.map((e) {
-                            final porcentaje = _gastoTotalAcumulado > 0 ? (e.value / _gastoTotalAcumulado) : 0.0;
+                            final porcentaje = _gastoTotalFiltrado > 0 ? (e.value / _gastoTotalFiltrado) : 0.0;
                             return Card(
                               child: Padding(
                                 padding: const EdgeInsets.all(12.0),
@@ -950,7 +1369,7 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
               ),
             ),
 
-            // Sub-Pestaña 2: Comparador e Histórico de Precios
+            // SUB-PESTAÑA 2: COMPARAR POR PRODUCTO
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -974,23 +1393,132 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
                   Expanded(
                     child: _historialDelProductoSeleccionado.isEmpty
                         ? const Center(
-                            child: Text('Selecciona un producto que haya sido comprado para ver su comparativa entre tiendas y fechas.'),
+                            child: Text('Selecciona un producto comprado para ver sus precios entre locales y fechas.'),
                           )
                         : ListView.builder(
                             itemCount: _historialDelProductoSeleccionado.length,
                             itemBuilder: (context, index) {
                               final p = _historialDelProductoSeleccionado[index];
-                              final fechaStr = "${p.fecha.day}/${p.fecha.month}/${p.fecha.year}";
 
                               return Card(
                                 child: ListTile(
                                   leading: const Icon(Icons.store, color: Colors.teal),
                                   title: Text('${p.lugar} - \$${p.precioUnitarioPaquete.toStringAsFixed(2)}'),
-                                  subtitle: Text('Fecha: $fechaStr | Paquete de ${p.cantidadPorPaquete} ${p.unidad}'),
+                                  subtitle: Text('Fecha: ${_formatearFecha(p.fecha)} | Paquete: ${p.cantidadPorPaquete} ${p.unidad}'),
                                   trailing: Text(
                                     '\$${(p.precioUnitarioPaquete / p.cantidadPorPaquete).toStringAsFixed(2)} / ${p.unidad}',
                                     style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
                                   ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+
+            // SUB-PESTAÑA 3: COMPARAR TICKETS COMPLETOS POR COMERCIO
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _tiendaParaComparar,
+                    decoration: const InputDecoration(
+                      labelText: 'Selecciona Comercio para Comparar Tickets',
+                      prefixIcon: Icon(Icons.storefront),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: widget.tiendas
+                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                        .toList(),
+                    onChanged: (val) => setState(() => _tiendaParaComparar = val),
+                    hint: const Text('Elije una tienda...'),
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (ticketsComercio.length >= 2) ...[
+                    Card(
+                      color: Colors.amber.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Builder(
+                          builder: (context) {
+                            final ultimo = ticketsComercio[0];
+                            final anterior = ticketsComercio[1];
+                            final dif = ultimo.totalFinal - anterior.totalFinal;
+                            final porc = anterior.totalFinal > 0 ? (dif / anterior.totalFinal) * 100 : 0.0;
+                            final subio = dif > 0;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Comparación Última Compra vs Anterior:', style: TextStyle(fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('Última (${_formatearFecha(ultimo.fecha)}): \$${ultimo.totalFinal.toStringAsFixed(2)}'),
+                                    Text('Anterior (${_formatearFecha(anterior.fecha)}): \$${anterior.totalFinal.toStringAsFixed(2)}'),
+                                  ],
+                                ),
+                                const Divider(),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      subio ? Icons.trending_up : Icons.trending_down,
+                                      color: subio ? Colors.red : Colors.green,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Variación ticket: ${subio ? "+" : ""}\$${dif.toStringAsFixed(2)} (${porc.toStringAsFixed(1)}%)',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: subio ? Colors.red.shade800 : Colors.green.shade800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  Expanded(
+                    child: ticketsComercio.isEmpty
+                        ? const Center(
+                            child: Text('No hay tickets registrados aún para este comercio.'),
+                          )
+                        : ListView.builder(
+                            itemCount: ticketsComercio.length,
+                            itemBuilder: (context, index) {
+                              final t = ticketsComercio[index];
+
+                              return Card(
+                                child: ExpansionTile(
+                                  leading: const Icon(Icons.receipt, color: Colors.teal),
+                                  title: Text('Ticket del ${_formatearFecha(t.fecha)}'),
+                                  subtitle: Text(
+                                    'Total: \$${t.totalFinal.toStringAsFixed(2)} (Subtotal: \$${t.subtotal.toStringAsFixed(2)} | Desc: -\$${t.montoDescuento.toStringAsFixed(2)})',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  children: t.productos.map((prod) {
+                                    return ListTile(
+                                      dense: true,
+                                      title: Text('${prod.nombre} (x${prod.paquetesComprados})'),
+                                      subtitle: Text('${prod.cantidadPorPaquete}${prod.unidad} x paq. | Categ: ${prod.categoria}'),
+                                      trailing: Text(
+                                        '\$${prod.subtotal.toStringAsFixed(2)}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                    );
+                                  }).toList(),
                                 ),
                               );
                             },
@@ -1006,7 +1534,7 @@ class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorP
   }
 }
 
-// PESTAÑA 4: GESTIÓN DE TIENDAS, CATEGORÍAS Y CATALOGO
+// PESTAÑA 5: GESTIÓN DE TIENDAS, CATEGORÍAS Y CATÁLOGO BASE
 class GestionCatalogosPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
