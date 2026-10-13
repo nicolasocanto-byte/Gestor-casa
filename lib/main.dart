@@ -25,7 +25,7 @@ class MiAppCasa extends StatelessWidget {
 class ProductoAlmacen {
   final String nombre;
   final double cantidadPaquete;
-  final String unidad; // 'gr', 'kg', 'ml', 'L', 'un'
+  final String unidad; // 'gr', 'kg', 'ml', 'L', 'un', 'mts'
   final String categoria;
 
   ProductoAlmacen({
@@ -75,6 +75,14 @@ class ProductoCompra {
 
   double get subtotal => paquetesComprados * precioUnitarioPaquete;
   double get cantidadTotalProd => paquetesComprados * cantidadPorPaquete;
+
+  // Precio base estandarizado para comparar (por gramo, por ml, por metro o por unidad)
+  double get precioPorUnidadBase {
+    if (cantidadPorPaquete <= 0) return precioUnitarioPaquete;
+    double factor = 1.0;
+    if (unidad == 'kg' || unidad == 'L') factor = 1000.0;
+    return precioUnitarioPaquete / (cantidadPorPaquete * factor);
+  }
 }
 
 class TicketCompra {
@@ -95,20 +103,8 @@ class TicketCompra {
     required this.totalFinal,
     required this.productos,
   });
-}
 
-class ItemSimulado {
-  final String nombre;
-  int cantidadPaquetes;
-  final String unidad;
-  final String categoria;
-
-  ItemSimulado({
-    required this.nombre,
-    required this.cantidadPaquetes,
-    required this.unidad,
-    required this.categoria,
-  });
+  String get etiquetaVisual => '$tienda - ${fecha.day}/${fecha.month}/${fecha.year} (\$$totalFinal)';
 }
 
 // NAVEGACIÓN PRINCIPAL
@@ -126,14 +122,16 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
   final List<String> _categoriasGuardadas = ['Alimentos', 'Limpieza', 'Bebidas', 'Higiene y Perfumería'];
 
   final List<ProductoAlmacen> _catalogoAlmacen = [
+    ProductoAlmacen(nombre: 'Yerba Mate', cantidadPaquete: 1000, unidad: 'gr', categoria: 'Alimentos'),
     ProductoAlmacen(nombre: 'Fideos Moñito', cantidadPaquete: 500, unidad: 'gr', categoria: 'Alimentos'),
-    ProductoAlmacen(nombre: 'Leche Entera', cantidadPaquete: 1, unidad: 'L', categoria: 'Bebidas'),
+    ProductoAlmacen(nombre: 'Papel Higiénico (320m total)', cantidadPaquete: 320, unidad: 'mts', categoria: 'Higiene y Perfumería'),
     ProductoAlmacen(nombre: 'Detergente Lavavajillas', cantidadPaquete: 750, unidad: 'ml', categoria: 'Limpieza'),
+    ProductoAlmacen(nombre: 'Leche Entera', cantidadPaquete: 1, unidad: 'L', categoria: 'Bebidas'),
   ];
 
   final List<ItemDespensa> _inventarioDespensa = [
-    ItemDespensa(nombre: 'Fideos Moñito', cantidadActual: 1000, unidad: 'gr', categoria: 'Alimentos'),
-    ItemDespensa(nombre: 'Leche Entera', cantidadActual: 2, unidad: 'L', categoria: 'Bebidas'),
+    ItemDespensa(nombre: 'Yerba Mate', cantidadActual: 1000, unidad: 'gr', categoria: 'Alimentos'),
+    ItemDespensa(nombre: 'Detergente Lavavajillas', cantidadActual: 750, unidad: 'ml', categoria: 'Limpieza'),
   ];
 
   final List<TicketCompra> _historicoTickets = [];
@@ -175,16 +173,13 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         categorias: _categoriasGuardadas,
         onActualizar: () => setState(() {}),
       ),
-      SimuladorComprasPantalla(
+      SimuladorComprasExcelPantalla(
         tiendas: _tiendasGuardadas,
-        catalogo: _catalogoAlmacen,
-        tickets: _historicoTickets,
-      ),
-      EstadisticasComparadorPantalla(
-        tickets: _historicoTickets,
         categorias: _categoriasGuardadas,
-        tiendas: _tiendasGuardadas,
         catalogo: _catalogoAlmacen,
+      ),
+      ComparadorTicketsExcelPantalla(
+        tickets: _historicoTickets,
       ),
       GestionCatalogosPantalla(
         tiendas: _tiendasGuardadas,
@@ -205,8 +200,8 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Comprar'),
           BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: 'Despensa'),
-          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart_checkout), label: 'Simulador'),
-          BottomNavigationBarItem(icon: Icon(Icons.analytics), label: 'Estadísticas'),
+          BottomNavigationBarItem(icon: Icon(Icons.table_chart), label: 'Simulador Excel'),
+          BottomNavigationBarItem(icon: Icon(Icons.compare), label: 'Comparar Tickets'),
           BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Catálogos'),
         ],
       ),
@@ -246,7 +241,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
 
   String _unidadSeleccionada = 'gr';
   String _categoriaSeleccionada = 'Alimentos';
-  final List<String> _unidadesDisponibles = ['gr', 'kg', 'ml', 'L', 'un'];
+  final List<String> _unidadesDisponibles = ['gr', 'kg', 'ml', 'L', 'un', 'mts'];
   final List<ProductoCompra> _productosTicket = [];
   bool _descuentoEnPorcentaje = true;
 
@@ -803,732 +798,541 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
   }
 }
 
-// PESTAÑA 3: SIMULADOR Y COMPARADOR DE CESTA DE COMPRAS
-class SimuladorComprasPantalla extends StatefulWidget {
+// PESTAÑA 3: SIMULADOR DE COMPRAS TIPO EXCEL (2 A 4 TIENDAS)
+class SimuladorComprasExcelPantalla extends StatefulWidget {
   final List<String> tiendas;
+  final List<String> categorias;
   final List<ProductoAlmacen> catalogo;
-  final List<TicketCompra> tickets;
 
-  const SimuladorComprasPantalla({
+  const SimuladorComprasExcelPantalla({
     super.key,
     required this.tiendas,
+    required this.categorias,
     required this.catalogo,
-    required this.tickets,
   });
 
   @override
-  State<SimuladorComprasPantalla> createState() => _SimuladorComprasPantallaState();
+  State<SimuladorComprasExcelPantalla> createState() => _SimuladorComprasExcelPantallaState();
 }
 
-class _SimuladorComprasPantallaState extends State<SimuladorComprasPantalla> {
-  ProductoAlmacen? _productoSeleccionado;
-  final List<ItemSimulado> _listaSimulada = [];
+class _DatosCeldaSimulador {
+  double? precio;
+  double? cantidadContenido; // ej: 1000 gr o 500 gr, o 320 mts
+  String unidad;
 
-  void _agregarAListaSimulada(ProductoAlmacen prod) {
-    setState(() {
-      final idx = _listaSimulada.indexWhere((i) => i.nombre.toLowerCase() == prod.nombre.toLowerCase());
-      if (idx >= 0) {
-        _listaSimulada[idx].cantidadPaquetes += 1;
-      } else {
-        _listaSimulada.add(ItemSimulado(
-          nombre: prod.nombre,
-          cantidadPaquetes: 1,
-          unidad: prod.unidad,
-          categoria: prod.categoria,
-        ));
-      }
-    });
+  _DatosCeldaSimulador({this.precio, this.cantidadContenido, this.unidad = 'gr'});
+
+  double? get precioUnitarioBase {
+    if (precio == null || cantidadContenido == null || cantidadContenido! <= 0) return null;
+    double factor = 1.0;
+    if (unidad == 'kg' || unidad == 'L') factor = 1000.0;
+    return precio! / (cantidadContenido! * factor);
+  }
+}
+
+class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPantalla> {
+  int _cantidadColumnas = 2; // Opciones: 2, 3 o 4 comercios
+  late List<String?> _tiendasSeleccionadas;
+
+  // Guarda datos ingresados: Map< "nombreProducto_colIndex", _DatosCeldaSimulador >
+  final Map<String, _DatosCeldaSimulador> _matrizPrecios = {};
+
+  final List<Color> _coloresCategorias = [
+    Colors.orange.shade100,
+    Colors.blue.shade100,
+    Colors.purple.shade100,
+    Colors.pink.shade100,
+    Colors.teal.shade100,
+    Colors.amber.shade100,
+  ];
+
+  @override
+  void initState() {
+    super.initState() {
+      _tiendasSeleccionadas = [
+        widget.tiendas.isNotEmpty ? widget.tiendas[0] : 'Tienda 1',
+        widget.tiendas.length > 1 ? widget.tiendas[1] : 'Tienda 2',
+        null,
+        null,
+      ];
+    }
   }
 
-  double? _obtenerUltimoPrecio(String nombreProd, String tienda) {
-    for (var ticket in widget.tickets.reversed) {
-      if (ticket.tienda == tienda) {
-        for (var p in ticket.productos) {
-          if (p.nombre.toLowerCase() == nombreProd.toLowerCase()) {
-            return p.precioUnitarioPaquete;
-          }
-        }
-      }
-    }
-    return null;
+  Color _obtenerColorCategoria(String cat) {
+    final idx = widget.categorias.indexOf(cat);
+    if (idx >= 0) return _coloresCategorias[idx % _coloresCategorias.length];
+    return Colors.grey.shade200;
+  }
+
+  void _abrirModalIngresoPrecio(ProductoAlmacen prod, int colIndex) {
+    final clave = '${prod.nombre}_$colIndex';
+    final celdaActual = _matrizPrecios[clave] ?? _DatosCeldaSimulador(cantidadContenido: prod.cantidadPaquete, unidad: prod.unidad);
+
+    final precioCtrl = TextEditingController(text: celdaActual.precio?.toString() ?? '');
+    final cantCtrl = TextEditingController(text: celdaActual.cantidadContenido?.toString() ?? prod.cantidadPaquete.toString());
+    String unidadSel = celdaActual.unidad;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Ingresar en ${_tiendasSeleccionadas[colIndex] ?? "Tienda ${colIndex + 1}"}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Producto: ${prod.nombre}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: precioCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Precio del Paquete/Unidad (\$)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: cantCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Contenido/Medida',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 1,
+                    child: DropdownButtonFormField<String>(
+                      value: ['gr', 'kg', 'ml', 'L', 'un', 'mts'].contains(unidadSel) ? unidadSel : 'gr',
+                      decoration: const InputDecoration(border: OutlineInputBorder()),
+                      items: ['gr', 'kg', 'ml', 'L', 'un', 'mts']
+                          .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                          .toList(),
+                      onChanged: (u) {
+                        if (u != null) unidadSel = u;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final p = double.tryParse(precioCtrl.text.trim().replaceAll(',', '.')) ?? 0.0;
+                final c = double.tryParse(cantCtrl.text.trim().replaceAll(',', '.')) ?? 0.0;
+
+                setState(() {
+                  if (p > 0 && c > 0) {
+                    _matrizPrecios[clave] = _DatosCeldaSimulador(
+                      precio: p,
+                      cantidadContenido: c,
+                      unidad: unidadSel,
+                    );
+                  } else {
+                    _matrizPrecios.remove(clave);
+                  }
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, double> costoPorTienda = {};
-    final Map<String, int> productosFaltantesPorTienda = {};
-
-    for (var tienda in widget.tiendas) {
-      double totalTienda = 0.0;
-      int faltantes = 0;
-
-      for (var item in _listaSimulada) {
-        final precio = _obtenerUltimoPrecio(item.nombre, tienda);
-        if (precio != null) {
-          totalTienda += precio * item.cantidadPaquetes;
-        } else {
-          faltantes++;
-        }
-      }
-
-      costoPorTienda[tienda] = totalTienda;
-      productosFaltantesPorTienda[tienda] = faltantes;
-    }
-
-    String? tiendaMasBarata;
-    double menorCosto = double.infinity;
-
-    costoPorTienda.forEach((tienda, costo) {
-      if (costo > 0 && costo < menorCosto && (productosFaltantesPorTienda[tienda] == 0)) {
-        menorCosto = costo;
-        tiendaMasBarata = tienda;
-      }
-    });
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Simulador de Cesta de Compras'),
+        title: const Text('Simulador Excel Multitienda'),
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
+      body: Column(
+        children: [
+          // Control para elegir 2, 3 o 4 comercios
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Card(
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Simular Lista de Compras:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<ProductoAlmacen>(
-                      value: _productoSeleccionado,
-                      decoration: const InputDecoration(
-                        labelText: 'Agregar producto a la simulación',
-                        prefixIcon: Icon(Icons.add_shopping_cart),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: widget.catalogo
-                          .map((p) => DropdownMenuItem(value: p, child: Text(p.descripcionCompleta)))
-                          .toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          _agregarAListaSimulada(val);
-                          setState(() => _productoSeleccionado = null);
-                        }
-                      },
-                      hint: const Text('Seleccionar del catálogo...'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Cantidad de Comercios:', style: TextStyle(fontWeight: FontWeight.bold)),
+                        SegmentedButton<int>(
+                          segments: const [
+                            ButtonSegment(value: 2, label: Text('2')),
+                            ButtonSegment(value: 3, label: Text('3')),
+                            ButtonSegment(value: 4, label: Text('4')),
+                          ],
+                          selected: {_cantidadColumnas},
+                          onSelectionChanged: (val) {
+                            setState(() => _cantidadColumnas = val.first);
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+          ),
 
-            const Text('Cesta a Cotizar:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-
-            _listaSimulada.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(child: Text('Agrega productos arriba para comparar presupuestos entre tiendas.')),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _listaSimulada.length,
-                    itemBuilder: (context, index) {
-                      final item = _listaSimulada[index];
-                      return Card(
-                        child: ListTile(
-                          title: Text(item.nombre),
-                          subtitle: Text('Categoría: ${item.categoria}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline),
-                                onPressed: () {
-                                  setState(() {
-                                    if (item.cantidadPaquetes > 1) {
-                                      item.cantidadPaquetes--;
-                                    } else {
-                                      _listaSimulada.removeAt(index);
-                                    }
-                                  });
-                                },
-                              ),
-                              Text('x${item.cantidadPaquetes}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline),
-                                onPressed: () => setState(() => item.cantidadPaquetes++),
-                              ),
-                            ],
+          // TABLA EXCEL COMPARATIVA CON SCROLL HORIZONTAL
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                  child: DataTable(
+                    headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
+                    columnSpacing: 16,
+                    dataRowMinHeight: 48,
+                    columns: [
+                      const DataColumn(label: Text('Productos (Despensa)', style: TextStyle(fontWeight: FontWeight.bold))),
+                      for (int col = 0; col < _cantidadColumnas; col++)
+                        DataColumn(
+                          label: SizedBox(
+                            width: 140,
+                            child: DropdownButtonFormField<String>(
+                              value: _tiendasSeleccionadas[col],
+                              isExpanded: true,
+                              decoration: const InputDecoration(border: InputBorder.none),
+                              items: widget.tiendas
+                                  .map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextSpanOverflow.ellipsis)))
+                                  .toList(),
+                              onChanged: (val) => setState(() => _tiendasSeleccionadas[col] = val),
+                              hint: Text('Tienda ${col + 1}'),
+                            ),
                           ),
+                        ),
+                    ],
+                    rows: _generarFilasExcel(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<DataRow> _generarFilasExcel() {
+    final List<DataRow> filas = [];
+
+    // Agrupar catálogo por categorías
+    final Map<String, List<ProductoAlmacen>> porCategoria = {};
+    for (var prod in widget.catalogo) {
+      porCategoria.putIfAbsent(prod.categoria, () => []).add(prod);
+    }
+
+    porCategoria.forEach((categoria, productos) {
+      // Fila de encabezado de categoría con color propio
+      filas.add(
+        DataRow(
+          color: WidgetStateProperty.all(_obtenerColorCategoria(categoria)),
+          cells: [
+            DataCell(
+              Text(
+                'CATEGORÍA: ${categoria.toUpperCase()}',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+              ),
+            ),
+            for (int col = 0; col < _cantidadColumnas; col++) const DataCell(Text('')),
+          ],
+        ),
+      );
+
+      // Filas de productos dentro de la categoría
+      for (var prod in productos) {
+        // Encontrar precios base unitarios cargados en cada columna para este producto
+        double? menorPrecioBase = double.infinity;
+        double? mayorPrecioBase = -1.0;
+
+        for (int col = 0; col < _cantidadColumnas; col++) {
+          final c = _matrizPrecios['${prod.nombre}_$col'];
+          final pb = c?.precioUnitarioBase;
+          if (pb != null) {
+            if (pb < menorPrecioBase!) menorPrecioBase = pb;
+            if (pb > mayorPrecioBase!) mayorPrecioBase = pb;
+          }
+        }
+
+        if (menorPrecioBase == double.infinity) menorPrecioBase = null;
+        if (mayorPrecioBase == -1.0) mayorPrecioBase = null;
+
+        filas.add(
+          DataRow(
+            cells: [
+              DataCell(
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(prod.nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text('Base: ${prod.cantidadPaquete} ${prod.unidad}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+              ),
+              for (int col = 0; col < _cantidadColumnas; col++)
+                DataCell(
+                  Builder(
+                    builder: (context) {
+                      final clave = '${prod.nombre}_$col';
+                      final celda = _matrizPrecios[clave];
+
+                      Color fondoCelda = Colors.transparent;
+                      Color textoColor = Colors.black;
+
+                      if (celda != null && celda.precioUnitarioBase != null && menorPrecioBase != null) {
+                        if ((celda.precioUnitarioBase! - menorPrecioBase).abs() < 0.0001) {
+                          fondoCelda = Colors.green.shade100;
+                          textoColor = Colors.green.shade900;
+                        } else if (mayorPrecioBase != null && (celda.precioUnitarioBase! - mayorPrecioBase).abs() < 0.0001) {
+                          fondoCelda = Colors.red.shade100;
+                          textoColor = Colors.red.shade900;
+                        }
+                      }
+
+                      return InkWell(
+                        onTap: () => _abrirModalIngresoPrecio(prod, col),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: fondoCelda,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: celda == null
+                              ? const Text('+ Cargar', style: TextStyle(color: Colors.grey, fontSize: 12))
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '\$${celda.precio!.toStringAsFixed(2)}',
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: textoColor),
+                                    ),
+                                    Text(
+                                      '${celda.cantidadContenido}${celda.unidad}',
+                                      style: TextStyle(fontSize: 10, color: textoColor),
+                                    ),
+                                  ],
+                                ),
                         ),
                       );
                     },
                   ),
-            const SizedBox(height: 16),
-
-            if (_listaSimulada.isNotEmpty) ...[
-              const Text('Comparativa de Presupuesto por Tienda:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 8),
-
-              ...widget.tiendas.map((tienda) {
-                final total = costoPorTienda[tienda] ?? 0.0;
-                final faltantes = productosFaltantesPorTienda[tienda] ?? 0;
-                final esMasBarata = tienda == tiendaMasBarata;
-
-                return Card(
-                  color: esMasBarata ? Colors.green.shade50 : null,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Text(tienda, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                if (esMasBarata) ...[
-                                  const SizedBox(width: 8),
-                                  Chip(
-                                    label: const Text('¡MÁS BARATO!', style: TextStyle(color: Colors.white, fontSize: 11)),
-                                    backgroundColor: Colors.green,
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                ],
-                              ],
-                            ),
-                            Text(
-                              '\$${total.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: esMasBarata ? Colors.green.shade800 : Colors.teal,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (faltantes > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              'Nota: Hay $faltantes producto(s) sin precio histórico en esta tienda.',
-                              style: const TextStyle(color: Colors.orange, fontSize: 12),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
+                ),
             ],
-          ],
-        ),
-      ),
-    );
+          ),
+        );
+      }
+    });
+
+    return filas;
   }
 }
 
-// PESTAÑA 4: ESTADÍSTICAS, COMPARADOR Y FILTROS TEMPORALES
-class EstadisticasComparadorPantalla extends StatefulWidget {
+// PESTAÑA 4: COMPARADOR DE TICKETS TIPO EXCEL (2 COLUMNAS)
+class ComparadorTicketsExcelPantalla extends StatefulWidget {
   final List<TicketCompra> tickets;
-  final List<String> categorias;
-  final List<String> tiendas;
-  final List<ProductoAlmacen> catalogo;
 
-  const EstadisticasComparadorPantalla({
+  const ComparadorTicketsExcelPantalla({
     super.key,
     required this.tickets,
-    required this.categorias,
-    required this.tiendas,
-    required this.catalogo,
   });
 
   @override
-  State<EstadisticasComparadorPantalla> createState() => _EstadisticasComparadorPantallaState();
+  State<ComparadorTicketsExcelPantalla> createState() => _ComparadorTicketsExcelPantallaState();
 }
 
-class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorPantalla> {
-  String _filtroPeriodo = 'Este Mes';
-  final List<String> _opcionesPeriodo = ['Esta Semana', 'Este Mes', 'Mes Anterior', 'Todo el Histórico'];
-
-  String? _productoParaComparar;
-  String? _tiendaParaComparar;
-
-  // Comparativa de Meses
-  String? _mesComparar1;
-  String? _mesComparar2;
-
-  List<TicketCompra> get _ticketsFiltrados {
-    final ahora = DateTime.now();
-    return widget.tickets.where((t) {
-      if (_filtroPeriodo == 'Esta Semana') {
-        final inicioSemana = ahora.subtract(Duration(days: ahora.weekday - 1));
-        final fechaTicketSinHora = DateTime(t.fecha.year, t.fecha.month, t.fecha.day);
-        final inicioSemanaSinHora = DateTime(inicioSemana.year, inicioSemana.month, inicioSemana.day);
-        return fechaTicketSinHora.isAfter(inicioSemanaSinHora.subtract(const Duration(days: 1)));
-      } else if (_filtroPeriodo == 'Este Mes') {
-        return t.fecha.year == ahora.year && t.fecha.month == ahora.month;
-      } else if (_filtroPeriodo == 'Mes Anterior') {
-        final mesAnterior = DateTime(ahora.year, ahora.month - 1);
-        return t.fecha.year == mesAnterior.year && t.fecha.month == mesAnterior.month;
-      }
-      return true; // Todo el histórico
-    }).toList();
-  }
-
-  double get _gastoTotalFiltrado => _ticketsFiltrados.fold(0, (sum, t) => sum + t.totalFinal);
-
-  Map<String, double> get _gastosPorCategoria {
-    final Map<String, double> mapa = {};
-    for (var t in _ticketsFiltrados) {
-      for (var p in t.productos) {
-        mapa[p.categoria] = (mapa[p.categoria] ?? 0) + p.subtotal;
-      }
-    }
-    return mapa;
-  }
-
-  Map<String, double> get _gastosPorTienda {
-    final Map<String, double> mapa = {};
-    for (var t in _ticketsFiltrados) {
-      mapa[t.tienda] = (mapa[t.tienda] ?? 0) + t.totalFinal;
-    }
-    return mapa;
-  }
-
-  List<String> get _listaMesesDisponibles {
-    final Set<String> meses = {};
-    for (var t in widget.tickets) {
-      final mesStr = '${t.fecha.month.toString().padLeft(2, '0')}/${t.fecha.year}';
-      meses.add(mesStr);
-    }
-    return meses.toList();
-  }
-
-  double _calcularGastoDeUnMes(String? mesAnio) {
-    if (mesAnio == null) return 0.0;
-    final partes = mesAnio.split('/');
-    if (partes.length < 2) return 0.0;
-    final mes = int.tryParse(partes[0]) ?? 0;
-    final anio = int.tryParse(partes[1]) ?? 0;
-
-    return widget.tickets
-        .where((t) => t.fecha.month == mes && t.fecha.year == anio)
-        .fold(0.0, (sum, t) => sum + t.totalFinal);
-  }
-
-  List<ProductoCompra> get _historialDelProductoSeleccionado {
-    if (_productoParaComparar == null) return [];
-    final List<ProductoCompra> prods = [];
-    for (var t in widget.tickets) {
-      for (var p in t.productos) {
-        if (p.nombre.toLowerCase() == _productoParaComparar!.toLowerCase()) {
-          prods.add(p);
-        }
-      }
-    }
-    return prods;
-  }
-
-  List<TicketCompra> get _ticketsDelComercioSeleccionado {
-    if (_tiendaParaComparar == null) return [];
-    final list = widget.tickets.where((t) => t.tienda == _tiendaParaComparar).toList();
-    list.sort((a, b) => b.fecha.compareTo(a.fecha));
-    return list;
-  }
-
-  String _formatearFecha(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
+class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelPantalla> {
+  TicketCompra? _ticketA;
+  TicketCompra? _ticketB;
 
   @override
   Widget build(BuildContext context) {
-    final nombresProductos = widget.catalogo.map((p) => p.nombre).toSet();
-    for (var t in widget.tickets) {
-      for (var p in t.productos) {
+    // Obtener la lista unificada de nombres de productos de ambos tickets
+    final Set<String> nombresProductos = {};
+    if (_ticketA != null) {
+      for (var p in _ticketA!.productos) {
+        nombresProductos.add(p.nombre);
+      }
+    }
+    if (_ticketB != null) {
+      for (var p in _ticketB!.productos) {
         nombresProductos.add(p.nombre);
       }
     }
 
-    final ticketsComercio = _ticketsDelComercioSeleccionado;
-    final mesesDisponibles = _listaMesesDisponibles;
-
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Estadísticas y Comparador'),
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          bottom: const TabBar(
-            isScrollable: true,
-            tabs: [
-              Tab(icon: Icon(Icons.pie_chart), text: 'Gastos y Períodos'),
-              Tab(icon: Icon(Icons.shopping_bag), text: 'Por Producto'),
-              Tab(icon: Icon(Icons.receipt), text: 'Por Ticket / Comercio'),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            // SUB-PESTAÑA 1: GASTOS Y FILTROS POR PERÍODO
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Selector de período
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: DropdownButtonFormField<String>(
-                        value: _filtroPeriodo,
-                        decoration: const InputDecoration(
-                          labelText: 'Filtrar Gastos por Período',
-                          prefixIcon: Icon(Icons.calendar_month),
-                          border: OutlineInputBorder(),
-                        ),
-                        items: _opcionesPeriodo
-                            .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) setState(() => _filtroPeriodo = val);
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Tarjeta de gasto total del período
-                  Card(
-                    color: Colors.teal.shade700,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Gasto ($_filtroPeriodo):', style: const TextStyle(color: Colors.white, fontSize: 16)),
-                          Text(
-                            '\$${_gastoTotalFiltrado.toStringAsFixed(2)}',
-                            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // MÓDULO COMPARADOR ENTRE DOS MESES DISTINTOS
-                  Card(
-                    color: Colors.teal.shade50,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Comparar Gastos entre Meses:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _mesComparar1,
-                                  decoration: const InputDecoration(labelText: 'Mes A', border: OutlineInputBorder()),
-                                  items: mesesDisponibles.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                                  onChanged: (val) => setState(() => _mesComparar1 = val),
-                                  hint: const Text('Mes 1'),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _mesComparar2,
-                                  decoration: const InputDecoration(labelText: 'Mes B', border: OutlineInputBorder()),
-                                  items: mesesDisponibles.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                                  onChanged: (val) => setState(() => _mesComparar2 = val),
-                                  hint: const Text('Mes 2'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_mesComparar1 != null && _mesComparar2 != null) ...[
-                            const SizedBox(height: 12),
-                            Builder(
-                              builder: (context) {
-                                final gasto1 = _calcularGastoDeUnMes(_mesComparar1);
-                                final gasto2 = _calcularGastoDeUnMes(_mesComparar2);
-                                final diff = gasto1 - gasto2;
-                                final porc = gasto2 > 0 ? (diff / gasto2) * 100 : 0.0;
-                                final gastoMayor = diff > 0;
-
-                                return Column(
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text('Total $_mesComparar1: \$${gasto1.toStringAsFixed(2)}'),
-                                        Text('Total $_mesComparar2: \$${gasto2.toStringAsFixed(2)}'),
-                                      ],
-                                    ),
-                                    const Divider(),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          gastoMayor ? Icons.trending_up : Icons.trending_down,
-                                          color: gastoMayor ? Colors.red : Colors.green,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Diferencia: ${gastoMayor ? "+" : ""}\$${diff.toStringAsFixed(2)} (${porc.toStringAsFixed(1)}%)',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: gastoMayor ? Colors.red.shade800 : Colors.green.shade800,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                );
-                              },
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Comparador de Tickets Excel'),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+      ),
+      body: Column(
+        children: [
+          // Selectores de los 2 tickets
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<TicketCompra>(
+                            value: _ticketA,
+                            decoration: const InputDecoration(
+                              labelText: 'Columna A: Seleccionar Ticket 1',
+                              border: OutlineInputBorder(),
                             ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Gastos por Categoría
-                  const Text('Gastos por Categoría:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 8),
-                  _gastosPorCategoria.isEmpty
-                      ? const Text('Sin compras en este período.')
-                      : Column(
-                          children: _gastosPorCategoria.entries.map((e) {
-                            final porcentaje = _gastoTotalFiltrado > 0 ? (e.value / _gastoTotalFiltrado) : 0.0;
-                            return Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                        Text('\$${e.value.toStringAsFixed(2)} (${(porcentaje * 100).toStringAsFixed(1)}%)'),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    LinearProgressIndicator(value: porcentaje, minHeight: 8, color: Colors.teal),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                  const SizedBox(height: 16),
-
-                  // Gastos por Tienda
-                  const Text('Gastos por Tienda:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 8),
-                  _gastosPorTienda.isEmpty
-                      ? const Text('Sin compras en este período.')
-                      : Column(
-                          children: _gastosPorTienda.entries.map((e) {
-                            final porcentaje = _gastoTotalFiltrado > 0 ? (e.value / _gastoTotalFiltrado) : 0.0;
-                            return Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                        Text('\$${e.value.toStringAsFixed(2)} (${(porcentaje * 100).toStringAsFixed(1)}%)'),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    LinearProgressIndicator(value: porcentaje, minHeight: 8, color: Colors.orange),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                ],
-              ),
-            ),
-
-            // SUB-PESTAÑA 2: COMPARAR POR PRODUCTO
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: _productoParaComparar,
-                    decoration: const InputDecoration(
-                      labelText: 'Selecciona Producto para Comparar',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: nombresProductos
-                        .map((n) => DropdownMenuItem(value: n, child: Text(n)))
-                        .toList(),
-                    onChanged: (val) => setState(() => _productoParaComparar = val),
-                    hint: const Text('Elije un producto...'),
-                  ),
-                  const SizedBox(height: 16),
-
-                  Expanded(
-                    child: _historialDelProductoSeleccionado.isEmpty
-                        ? const Center(
-                            child: Text('Selecciona un producto comprado para ver sus precios entre locales y fechas.'),
-                          )
-                        : ListView.builder(
-                            itemCount: _historialDelProductoSeleccionado.length,
-                            itemBuilder: (context, index) {
-                              final p = _historialDelProductoSeleccionado[index];
-
-                              return Card(
-                                child: ListTile(
-                                  leading: const Icon(Icons.store, color: Colors.teal),
-                                  title: Text('${p.lugar} - \$${p.precioUnitarioPaquete.toStringAsFixed(2)}'),
-                                  subtitle: Text('Fecha: ${_formatearFecha(p.fecha)} | Paquete: ${p.cantidadPorPaquete} ${p.unidad}'),
-                                  trailing: Text(
-                                    '\$${(p.precioUnitarioPaquete / p.cantidadPorPaquete).toStringAsFixed(2)} / ${p.unidad}',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
-                                  ),
-                                ),
-                              );
-                            },
+                            items: widget.tickets
+                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextSpanOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: (val) => setState(() => _ticketA = val),
+                            hint: const Text('Elegir Ticket 1'),
                           ),
-                  ),
-                ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<TicketCompra>(
+                            value: _ticketB,
+                            decoration: const InputDecoration(
+                              labelText: 'Columna B: Seleccionar Ticket 2',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: widget.tickets
+                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextSpanOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: (val) => setState(() => _ticketB = val),
+                            hint: const Text('Elegir Ticket 2'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
+          ),
 
-            // SUB-PESTAÑA 3: COMPARAR TICKETS COMPLETOS POR COMERCIO
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: _tiendaParaComparar,
-                    decoration: const InputDecoration(
-                      labelText: 'Selecciona Comercio para Comparar Tickets',
-                      prefixIcon: Icon(Icons.storefront),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: widget.tiendas
-                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                        .toList(),
-                    onChanged: (val) => setState(() => _tiendaParaComparar = val),
-                    hint: const Text('Elije una tienda...'),
-                  ),
-                  const SizedBox(height: 16),
-
-                  if (ticketsComercio.length >= 2) ...[
-                    Card(
-                      color: Colors.amber.shade50,
+          // TABLA EXCEL DE COMPARACIÓN
+          Expanded(
+            child: (_ticketA == null && _ticketB == null)
+                ? const Center(child: Text('Selecciona dos tickets arriba para realizar la comparación producto por producto.'))
+                : SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SingleChildScrollView(
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
-                        child: Builder(
-                          builder: (context) {
-                            final ultimo = ticketsComercio[0];
-                            final anterior = ticketsComercio[1];
-                            final dif = ultimo.totalFinal - anterior.totalFinal;
-                            final porc = anterior.totalFinal > 0 ? (dif / anterior.totalFinal) * 100 : 0.0;
-                            final subio = dif > 0;
+                        child: DataTable(
+                          headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
+                          columnSpacing: 20,
+                          columns: [
+                            const DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text(_ticketA?.tienda ?? 'Ticket A', style: const TextStyle(fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text(_ticketB?.tienda ?? 'Ticket B', style: const TextStyle(fontWeight: FontWeight.bold))),
+                          ],
+                          rows: nombresProductos.map((prodNombre) {
+                            ProductoCompra? prodA;
+                            ProductoCompra? prodB;
 
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Comparación Última Compra vs Anterior:', style: TextStyle(fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 6),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Última (${_formatearFecha(ultimo.fecha)}): \$${ultimo.totalFinal.toStringAsFixed(2)}'),
-                                    Text('Anterior (${_formatearFecha(anterior.fecha)}): \$${anterior.totalFinal.toStringAsFixed(2)}'),
-                                  ],
+                            if (_ticketA != null) {
+                              try {
+                                prodA = _ticketA!.productos.firstWhere((p) => p.nombre.toLowerCase() == prodNombre.toLowerCase());
+                              } catch (_) {}
+                            }
+                            if (_ticketB != null) {
+                              try {
+                                prodB = _ticketB!.productos.firstWhere((p) => p.nombre.toLowerCase() == prodNombre.toLowerCase());
+                              } catch (_) {}
+                            }
+
+                            final enAmbos = (prodA != null && prodB != null);
+                            Color fondoA = Colors.transparent;
+                            Color fondoB = Colors.transparent;
+
+                            if (enAmbos) {
+                              if (prodA!.precioPorUnidadBase < prodB!.precioPorUnidadBase) {
+                                fondoA = Colors.green.shade100; // Más barato A
+                                fondoB = Colors.red.shade100; // Más caro B
+                              } else if (prodA.precioPorUnidadBase > prodB.precioPorUnidadBase) {
+                                fondoA = Colors.red.shade100; // Más caro A
+                                fondoB = Colors.green.shade100; // Más barato B
+                              }
+                            } else {
+                              if (prodA != null) fondoA = Colors.grey.shade200; // No se repite
+                              if (prodB != null) fondoB = Colors.grey.shade200; // No se repite
+                            }
+
+                            return DataRow(
+                              cells: [
+                                DataCell(Text(prodNombre, style: const TextStyle(fontWeight: FontWeight.bold))),
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(color: fondoA, borderRadius: BorderRadius.circular(4)),
+                                    child: prodA == null
+                                        ? const Text('-', style: TextStyle(color: Colors.grey))
+                                        : Text(
+                                            '\$${prodA.precioUnitarioPaquete.toStringAsFixed(2)} (${prodA.cantidadPorPaquete}${prodA.unidad})',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: enAmbos ? (fondoA == Colors.green.shade100 ? Colors.green.shade900 : Colors.red.shade900) : Colors.black54,
+                                            ),
+                                          ),
+                                  ),
                                 ),
-                                const Divider(),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      subio ? Icons.trending_up : Icons.trending_down,
-                                      color: subio ? Colors.red : Colors.green,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Variación ticket: ${subio ? "+" : ""}\$${dif.toStringAsFixed(2)} (${porc.toStringAsFixed(1)}%)',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: subio ? Colors.red.shade800 : Colors.green.shade800,
-                                      ),
-                                    ),
-                                  ],
+                                DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(color: fondoB, borderRadius: BorderRadius.circular(4)),
+                                    child: prodB == null
+                                        ? const Text('-', style: TextStyle(color: Colors.grey))
+                                        : Text(
+                                            '\$${prodB.precioUnitarioPaquete.toStringAsFixed(2)} (${prodB.cantidadPorPaquete}${prodB.unidad})',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: enAmbos ? (fondoB == Colors.green.shade100 ? Colors.green.shade900 : Colors.red.shade900) : Colors.black54,
+                                            ),
+                                          ),
+                                  ),
                                 ),
                               ],
                             );
-                          },
+                          }).toList(),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  Expanded(
-                    child: ticketsComercio.isEmpty
-                        ? const Center(
-                            child: Text('No hay tickets registrados aún para este comercio.'),
-                          )
-                        : ListView.builder(
-                            itemCount: ticketsComercio.length,
-                            itemBuilder: (context, index) {
-                              final t = ticketsComercio[index];
-
-                              return Card(
-                                child: ExpansionTile(
-                                  leading: const Icon(Icons.receipt, color: Colors.teal),
-                                  title: Text('Ticket del ${_formatearFecha(t.fecha)}'),
-                                  subtitle: Text(
-                                    'Total: \$${t.totalFinal.toStringAsFixed(2)} (Subtotal: \$${t.subtotal.toStringAsFixed(2)} | Desc: -\$${t.montoDescuento.toStringAsFixed(2)})',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                  children: t.productos.map((prod) {
-                                    return ListTile(
-                                      dense: true,
-                                      title: Text('${prod.nombre} (x${prod.paquetesComprados})'),
-                                      subtitle: Text('${prod.cantidadPorPaquete}${prod.unidad} x paq. | Categ: ${prod.categoria}'),
-                                      trailing: Text(
-                                        '\$${prod.subtotal.toStringAsFixed(2)}',
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              );
-                            },
-                          ),
                   ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1561,7 +1365,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
   final _prodCantidadController = TextEditingController();
   String _prodUnidad = 'gr';
   String? _prodCategoriaSeleccionada;
-  final List<String> _unidades = ['gr', 'kg', 'ml', 'L', 'un'];
+  final List<String> _unidades = ['gr', 'kg', 'ml', 'L', 'un', 'mts'];
 
   void _agregarTienda() {
     final nombre = _tiendaNombreController.text.trim();
