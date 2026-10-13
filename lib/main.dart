@@ -1,6 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // CREDENCIALES CONFIGURADAS
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: "AIzaSyCJI4y01Hz8MH_s8sajNWEUUkX8E1SHrgc",
+      appId: "1:70786421592:web:99af61d76f25c1b044cb2d",
+      messagingSenderId: "70786421592",
+      projectId: "gestor-casa-3bf3b",
+    ),
+  );
+
   runApp(const MiAppCasa());
 }
 
@@ -21,35 +35,70 @@ class MiAppCasa extends StatelessWidget {
   }
 }
 
-// MODELOS DE DATOS
+// MODELOS
 class ProductoAlmacen {
+  final String id;
   final String nombre;
   final double cantidadPaquete;
-  final String unidad; // 'gr', 'kg', 'ml', 'L', 'un', 'mts'
+  final String unidad;
   final String categoria;
 
   ProductoAlmacen({
+    required this.id,
     required this.nombre,
     required this.cantidadPaquete,
     required this.unidad,
     required this.categoria,
   });
 
+  factory ProductoAlmacen.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return ProductoAlmacen(
+      id: doc.id,
+      nombre: data['nombre'] ?? '',
+      cantidadPaquete: (data['cantidadPaquete'] ?? 0.0).toDouble(),
+      unidad: data['unidad'] ?? 'gr',
+      categoria: data['categoria'] ?? 'General',
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'nombre': nombre,
+      'cantidadPaquete': cantidadPaquete,
+      'unidad': unidad,
+      'categoria': categoria,
+    };
+  }
+
   String get descripcionCompleta => '[$categoria] $nombre ($cantidadPaquete $unidad)';
 }
 
 class ItemDespensa {
+  final String id;
   final String nombre;
   double cantidadActual;
   final String unidad;
   final String categoria;
 
   ItemDespensa({
+    required this.id,
     required this.nombre,
     required this.cantidadActual,
     required this.unidad,
     required this.categoria,
   });
+
+  factory ItemDespensa.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return ItemDespensa(
+      id: doc.id,
+      nombre: data['nombre'] ?? '',
+      cantidadActual: (data['cantidadActual'] ?? 0.0).toDouble(),
+      unidad: data['unidad'] ?? 'gr',
+      categoria: data['categoria'] ?? 'General',
+    );
+  }
 }
 
 class ProductoCompra {
@@ -76,12 +125,37 @@ class ProductoCompra {
   double get subtotal => paquetesComprados * precioUnitarioPaquete;
   double get cantidadTotalProd => paquetesComprados * cantidadPorPaquete;
 
-  // Precio base estandarizado para comparar (por gramo, por ml, por metro o por unidad)
   double get precioPorUnidadBase {
     if (cantidadPorPaquete <= 0) return precioUnitarioPaquete;
     double factor = 1.0;
     if (unidad == 'kg' || unidad == 'L') factor = 1000.0;
     return precioUnitarioPaquete / (cantidadPorPaquete * factor);
+  }
+
+  factory ProductoCompra.fromMap(Map<String, dynamic> map) {
+    return ProductoCompra(
+      nombre: map['nombre'] ?? '',
+      lugar: map['lugar'] ?? '',
+      paquetesComprados: map['paquetesComprados'] ?? 1,
+      cantidadPorPaquete: (map['cantidadPorPaquete'] ?? 1.0).toDouble(),
+      unidad: map['unidad'] ?? 'gr',
+      precioUnitarioPaquete: (map['precioUnitarioPaquete'] ?? 0.0).toDouble(),
+      categoria: map['categoria'] ?? 'General',
+      fecha: DateTime.parse(map['fecha'] ?? DateTime.now().toIso8601String()),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'nombre': nombre,
+      'lugar': lugar,
+      'paquetesComprados': paquetesComprados,
+      'cantidadPorPaquete': cantidadPorPaquete,
+      'unidad': unidad,
+      'precioUnitarioPaquete': precioUnitarioPaquete,
+      'categoria': categoria,
+      'fecha': fecha.toIso8601String(),
+    };
   }
 }
 
@@ -104,10 +178,24 @@ class TicketCompra {
     required this.productos,
   });
 
+  factory TicketCompra.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final prodsRaw = (data['productos'] as List<dynamic>?) ?? [];
+    return TicketCompra(
+      id: doc.id,
+      fecha: DateTime.parse(data['fecha'] ?? DateTime.now().toIso8601String()),
+      tienda: data['tienda'] ?? '',
+      subtotal: (data['subtotal'] ?? 0.0).toDouble(),
+      montoDescuento: (data['montoDescuento'] ?? 0.0).toDouble(),
+      totalFinal: (data['totalFinal'] ?? 0.0).toDouble(),
+      productos: prodsRaw.map((p) => ProductoCompra.fromMap(p)).toList(),
+    );
+  }
+
   String get etiquetaVisual => '$tienda - ${fecha.day}/${fecha.month}/${fecha.year} (\$$totalFinal)';
 }
 
-// NAVEGACIÓN PRINCIPAL
+// NAVEGACIÓN
 class PantallaNavegacionPrincipal extends StatefulWidget {
   const PantallaNavegacionPrincipal({super.key});
 
@@ -118,79 +206,65 @@ class PantallaNavegacionPrincipal extends StatefulWidget {
 class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipal> {
   int _indicePestana = 0;
 
-  final List<String> _tiendasGuardadas = ['Supermercado Coto', 'Verdulería del Barrio', 'Carrefour'];
-  final List<String> _categoriasGuardadas = ['Alimentos', 'Limpieza', 'Bebidas', 'Higiene y Perfumería'];
-
-  final List<ProductoAlmacen> _catalogoAlmacen = [
-    ProductoAlmacen(nombre: 'Yerba Mate', cantidadPaquete: 1000, unidad: 'gr', categoria: 'Alimentos'),
-    ProductoAlmacen(nombre: 'Fideos Moñito', cantidadPaquete: 500, unidad: 'gr', categoria: 'Alimentos'),
-    ProductoAlmacen(nombre: 'Papel Higiénico (320m total)', cantidadPaquete: 320, unidad: 'mts', categoria: 'Higiene y Perfumería'),
-    ProductoAlmacen(nombre: 'Detergente Lavavajillas', cantidadPaquete: 750, unidad: 'ml', categoria: 'Limpieza'),
-    ProductoAlmacen(nombre: 'Leche Entera', cantidadPaquete: 1, unidad: 'L', categoria: 'Bebidas'),
-  ];
-
-  final List<ItemDespensa> _inventarioDespensa = [
-    ItemDespensa(nombre: 'Yerba Mate', cantidadActual: 1000, unidad: 'gr', categoria: 'Alimentos'),
-    ItemDespensa(nombre: 'Detergente Lavavajillas', cantidadActual: 750, unidad: 'ml', categoria: 'Limpieza'),
-  ];
-
-  final List<TicketCompra> _historicoTickets = [];
-
-  void _ingresarCompra(TicketCompra ticket) {
-    setState(() {
-      _historicoTickets.add(ticket);
-
-      for (var prod in ticket.productos) {
-        final index = _inventarioDespensa.indexWhere(
-          (item) => item.nombre.toLowerCase() == prod.nombre.toLowerCase() && item.unidad == prod.unidad,
-        );
-
-        if (index >= 0) {
-          _inventarioDespensa[index].cantidadActual += prod.cantidadTotalProd;
-        } else {
-          _inventarioDespensa.add(ItemDespensa(
-            nombre: prod.nombre,
-            cantidadActual: prod.cantidadTotalProd,
-            unidad: prod.unidad,
-            categoria: prod.categoria,
-          ));
-        }
-      }
-    });
-  }
+  final db = FirebaseFirestore.instance;
 
   @override
   Widget build(BuildContext context) {
-    final paginas = [
-      RegistroComprasPantalla(
-        tiendas: _tiendasGuardadas,
-        categorias: _categoriasGuardadas,
-        catalogo: _catalogoAlmacen,
-        onFinalizarCompra: _ingresarCompra,
-      ),
-      DespensaConsumoPantalla(
-        despensa: _inventarioDespensa,
-        categorias: _categoriasGuardadas,
-        onActualizar: () => setState(() {}),
-      ),
-      SimuladorComprasExcelPantalla(
-        tiendas: _tiendasGuardadas,
-        categorias: _categoriasGuardadas,
-        catalogo: _catalogoAlmacen,
-      ),
-      ComparadorTicketsExcelPantalla(
-        tickets: _historicoTickets,
-      ),
-      GestionCatalogosPantalla(
-        tiendas: _tiendasGuardadas,
-        categorias: _categoriasGuardadas,
-        catalogo: _catalogoAlmacen,
-        onActualizar: () => setState(() {}),
-      ),
-    ];
-
     return Scaffold(
-      body: paginas[_indicePestana],
+      body: StreamBuilder<QuerySnapshot>(
+        stream: db.collection('tiendas').snapshots(),
+        builder: (context, snapshotTiendas) {
+          final tiendas = snapshotTiendas.hasData
+              ? snapshotTiendas.data!.docs.map((d) => d['nombre'] as String).toList()
+              : ['Coto', 'Carrefour'];
+
+          return StreamBuilder<QuerySnapshot>(
+            stream: db.collection('categorias').snapshots(),
+            builder: (context, snapshotCategorias) {
+              final categorias = snapshotCategorias.hasData
+                  ? snapshotCategorias.data!.docs.map((d) => d['nombre'] as String).toList()
+                  : ['Alimentos', 'Limpieza', 'Bebidas', 'Higiene y Perfumería'];
+
+              return StreamBuilder<QuerySnapshot>(
+                stream: db.collection('catalogo').snapshots(),
+                builder: (context, snapshotCatalogo) {
+                  final catalogo = snapshotCatalogo.hasData
+                      ? snapshotCatalogo.data!.docs.map((d) => ProductoAlmacen.fromFirestore(d)).toList()
+                      : <ProductoAlmacen>[];
+
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: db.collection('despensa').snapshots(),
+                    builder: (context, snapshotDespensa) {
+                      final despensa = snapshotDespensa.hasData
+                          ? snapshotDespensa.data!.docs.map((d) => ItemDespensa.fromFirestore(d)).toList()
+                          : <ItemDespensa>[];
+
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: db.collection('tickets').snapshots(),
+                        builder: (context, snapshotTickets) {
+                          final tickets = snapshotTickets.hasData
+                              ? snapshotTickets.data!.docs.map((d) => TicketCompra.fromFirestore(d)).toList()
+                              : <TicketCompra>[];
+
+                          final paginas = [
+                            RegistroComprasPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
+                            DespensaConsumoPantalla(despensa: despensa, categorias: categorias),
+                            SimuladorComprasExcelPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
+                            ComparadorTicketsExcelPantalla(tickets: tickets),
+                            GestionCatalogosPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
+                          ];
+
+                          return paginas[_indicePestana];
+                        },
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _indicePestana,
         onTap: (index) => setState(() => _indicePestana = index),
@@ -209,19 +283,17 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
   }
 }
 
-// PESTAÑA 1: REGISTRO DE COMPRAS
+// COMPONENTE 1: REGISTRO DE COMPRAS CON GUARDADO EN NUBE
 class RegistroComprasPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
   final List<ProductoAlmacen> catalogo;
-  final Function(TicketCompra) onFinalizarCompra;
 
   const RegistroComprasPantalla({
     super.key,
     required this.tiendas,
     required this.categorias,
     required this.catalogo,
-    required this.onFinalizarCompra,
   });
 
   @override
@@ -293,26 +365,48 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
     });
   }
 
-  void _finalizarYGuardar() {
+  void _finalizarYGuardarEnNube() async {
     if (_productosTicket.isEmpty || _tiendaSeleccionada == null) {
       _mostrarMensaje('Agrega al menos un producto y selecciona una tienda.');
       return;
     }
 
-    final ticket = TicketCompra(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      fecha: DateTime.now(),
-      tienda: _tiendaSeleccionada!,
-      subtotal: _subtotalGeneral,
-      montoDescuento: _montoDescuentoTotal,
-      totalFinal: _totalConDescuento,
-      productos: List.from(_productosTicket),
-    );
+    final db = FirebaseFirestore.instance;
 
-    widget.onFinalizarCompra(ticket);
+    await db.collection('tickets').add({
+      'fecha': DateTime.now().toIso8601String(),
+      'tienda': _tiendaSeleccionada!,
+      'subtotal': _subtotalGeneral,
+      'montoDescuento': _montoDescuentoTotal,
+      'totalFinal': _totalConDescuento,
+      'productos': _productosTicket.map((p) => p.toMap()).toList(),
+    });
+
+    for (var prod in _productosTicket) {
+      final query = await db
+          .collection('despensa')
+          .where('nombre', isEqualTo: prod.nombre)
+          .where('unidad', isEqualTo: prod.unidad)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        final doc = query.docs.first;
+        final stockActual = (doc['cantidadActual'] ?? 0.0).toDouble();
+        await db.collection('despensa').doc(doc.id).update({
+          'cantidadActual': stockActual + prod.cantidadTotalProd,
+        });
+      } else {
+        await db.collection('despensa').add({
+          'nombre': prod.nombre,
+          'cantidadActual': prod.cantidadTotalProd,
+          'unidad': prod.unidad,
+          'categoria': prod.categoria,
+        });
+      }
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('¡Compra guardada en estadísticas y sumada a la Despensa!')),
+      const SnackBar(content: Text('¡Compra sincronizada en la nube de Firebase!')),
     );
 
     setState(() {
@@ -613,9 +707,9 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
-                      onPressed: _finalizarYGuardar,
-                      icon: const Icon(Icons.check_circle),
-                      label: const Text('Finalizar Compra y Sumar a Despensa'),
+                      onPressed: _finalizarYGuardarEnNube,
+                      icon: const Icon(Icons.cloud_upload),
+                      label: const Text('Finalizar Compra y Sincronizar en Nube'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal,
                         foregroundColor: Colors.white,
@@ -633,17 +727,15 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   }
 }
 
-// PESTAÑA 2: DESPENSA Y CONSUMO DIARIO
+// COMPONENTE 2: DESPENSA CON DESCUENTO DE STOCK EN FIREBASE
 class DespensaConsumoPantalla extends StatefulWidget {
   final List<ItemDespensa> despensa;
   final List<String> categorias;
-  final VoidCallback onActualizar;
 
   const DespensaConsumoPantalla({
     super.key,
     required this.despensa,
     required this.categorias,
-    required this.onActualizar,
   });
 
   @override
@@ -684,18 +776,20 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
               child: const Text('Cancelar'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final valor = double.tryParse(consumoController.text.trim().replaceAll(',', '.')) ?? 0.0;
                 if (valor > 0) {
-                  setState(() {
-                    item.cantidadActual -= valor;
-                    if (item.cantidadActual < 0) item.cantidadActual = 0;
+                  double nuevoStock = item.cantidadActual - valor;
+                  if (nuevoStock < 0) nuevoStock = 0;
+
+                  await FirebaseFirestore.instance.collection('despensa').doc(item.id).update({
+                    'cantidadActual': nuevoStock,
                   });
-                  widget.onActualizar();
-                  Navigator.pop(context);
+
+                  if (context.mounted) Navigator.pop(context);
                 }
               },
-              child: const Text('Descontar Stock'),
+              child: const Text('Descontar en Nube'),
             ),
           ],
         );
@@ -798,7 +892,7 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
   }
 }
 
-// PESTAÑA 3: SIMULADOR DE COMPRAS TIPO EXCEL (2 A 4 TIENDAS)
+// COMPONENTE 3: SIMULADOR EXCEL
 class SimuladorComprasExcelPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -1144,7 +1238,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
   }
 }
 
-// PESTAÑA 4: COMPARADOR DE TICKETS TIPO EXCEL (2 COLUMNAS)
+// COMPONENTE 4: COMPARADOR DE TICKETS TIPO EXCEL
 class ComparadorTicketsExcelPantalla extends StatefulWidget {
   final List<TicketCompra> tickets;
 
@@ -1234,7 +1328,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
 
           Expanded(
             child: (_ticketA == null && _ticketB == null)
-                ? const Center(child: Text('Selecciona dos tickets arriba para realizar la comparación producto por producto.'))
+                ? const Center(child: Text('Selecciona dos tickets arriba para comparar.'))
                 : SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: SingleChildScrollView(
@@ -1327,19 +1421,17 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
   }
 }
 
-// PESTAÑA 5: GESTIÓN DE TIENDAS, CATEGORÍAS Y CATÁLOGO BASE
+// COMPONENTE 5: GESTIÓN DE TIENDAS Y CATÁLOGOS CON CONEXIÓN FIREBASE
 class GestionCatalogosPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
   final List<ProductoAlmacen> catalogo;
-  final VoidCallback onActualizar;
 
   const GestionCatalogosPantalla({
     super.key,
     required this.tiendas,
     required this.categorias,
     required this.catalogo,
-    required this.onActualizar,
   });
 
   @override
@@ -1356,45 +1448,36 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
   String? _prodCategoriaSeleccionada;
   final List<String> _unidades = ['gr', 'kg', 'ml', 'L', 'un', 'mts'];
 
-  void _agregarTienda() {
+  void _agregarTienda() async {
     final nombre = _tiendaNombreController.text.trim();
-    if (nombre.isNotEmpty && !widget.tiendas.contains(nombre)) {
-      setState(() {
-        widget.tiendas.add(nombre);
-        _tiendaNombreController.clear();
-      });
-      widget.onActualizar();
+    if (nombre.isNotEmpty) {
+      await FirebaseFirestore.instance.collection('tiendas').add({'nombre': nombre});
+      _tiendaNombreController.clear();
     }
   }
 
-  void _agregarCategoria() {
+  void _agregarCategoria() async {
     final nombre = _categoriaNombreController.text.trim();
-    if (nombre.isNotEmpty && !widget.categorias.contains(nombre)) {
-      setState(() {
-        widget.categorias.add(nombre);
-        _categoriaNombreController.clear();
-      });
-      widget.onActualizar();
+    if (nombre.isNotEmpty) {
+      await FirebaseFirestore.instance.collection('categorias').add({'nombre': nombre});
+      _categoriaNombreController.clear();
     }
   }
 
-  void _agregarProductoAlmacen() {
+  void _agregarProductoAlmacen() async {
     final nombre = _prodNombreController.text.trim();
     final cantidad = double.tryParse(_prodCantidadController.text.trim().replaceAll(',', '.')) ?? 0.0;
     final cat = _prodCategoriaSeleccionada ?? (widget.categorias.isNotEmpty ? widget.categorias.first : 'General');
 
     if (nombre.isNotEmpty && cantidad > 0) {
-      setState(() {
-        widget.catalogo.add(ProductoAlmacen(
-          nombre: nombre,
-          cantidadPaquete: cantidad,
-          unidad: _prodUnidad,
-          categoria: cat,
-        ));
-        _prodNombreController.clear();
-        _prodCantidadController.clear();
+      await FirebaseFirestore.instance.collection('catalogo').add({
+        'nombre': nombre,
+        'cantidadPaquete': cantidad,
+        'unidad': _prodUnidad,
+        'categoria': cat,
       });
-      widget.onActualizar();
+      _prodNombreController.clear();
+      _prodCantidadController.clear();
     }
   }
 
@@ -1404,7 +1487,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Administrar Catálogos'),
+          title: const Text('Administrar Catálogos (Nube)'),
           bottom: const TabBar(
             isScrollable: true,
             tabs: [
@@ -1448,13 +1531,6 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                           child: ListTile(
                             leading: const Icon(Icons.store),
                             title: Text(t),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
-                                setState(() => widget.tiendas.removeAt(index));
-                                widget.onActualizar();
-                              },
-                            ),
                           ),
                         );
                       },
@@ -1495,13 +1571,6 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                           child: ListTile(
                             leading: const Icon(Icons.category),
                             title: Text(cat),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
-                                setState(() => widget.categorias.removeAt(index));
-                                widget.onActualizar();
-                              },
-                            ),
                           ),
                         );
                       },
@@ -1570,7 +1639,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                           ElevatedButton.icon(
                             onPressed: _agregarProductoAlmacen,
                             icon: const Icon(Icons.save),
-                            label: const Text('Guardar en Catálogo'),
+                            label: const Text('Guardar en Catálogo Nube'),
                             style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
                           ),
                         ],
@@ -1588,13 +1657,6 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                             leading: const Icon(Icons.inventory_2),
                             title: Text(p.nombre),
                             subtitle: Text('Categoría: ${p.categoria} | Base: ${p.cantidadPaquete} ${p.unidad}'),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
-                                setState(() => widget.catalogo.removeAt(index));
-                                widget.onActualizar();
-                              },
-                            ),
                           ),
                         );
                       },
