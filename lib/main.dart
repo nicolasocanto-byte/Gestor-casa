@@ -60,6 +60,7 @@ class ProductoCompra {
   final String unidad;
   final double precioUnitarioPaquete;
   final String categoria;
+  final DateTime fecha;
 
   ProductoCompra({
     required this.nombre,
@@ -69,10 +70,31 @@ class ProductoCompra {
     required this.unidad,
     required this.precioUnitarioPaquete,
     required this.categoria,
+    required this.fecha,
   });
 
   double get subtotal => paquetesComprados * precioUnitarioPaquete;
   double get cantidadTotalProd => paquetesComprados * cantidadPorPaquete;
+}
+
+class TicketCompra {
+  final String id;
+  final DateTime fecha;
+  final String tienda;
+  final double subtotal;
+  final double montoDescuento;
+  final double totalFinal;
+  final List<ProductoCompra> productos;
+
+  TicketCompra({
+    required this.id,
+    required this.fecha,
+    required this.tienda,
+    required this.subtotal,
+    required this.montoDescuento,
+    required this.totalFinal,
+    required this.productos,
+  });
 }
 
 // NAVEGACIÓN PRINCIPAL
@@ -86,27 +108,28 @@ class PantallaNavegacionPrincipal extends StatefulWidget {
 class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipal> {
   int _indicePestana = 0;
 
-  // Catalogos iniciales
   final List<String> _tiendasGuardadas = ['Supermercado Coto', 'Verdulería del Barrio', 'Carrefour'];
   final List<String> _categoriasGuardadas = ['Alimentos', 'Limpieza', 'Bebidas', 'Higiene y Perfumería'];
-  
+
   final List<ProductoAlmacen> _catalogoAlmacen = [
     ProductoAlmacen(nombre: 'Fideos Moñito', cantidadPaquete: 500, unidad: 'gr', categoria: 'Alimentos'),
     ProductoAlmacen(nombre: 'Leche Entera', cantidadPaquete: 1, unidad: 'L', categoria: 'Bebidas'),
     ProductoAlmacen(nombre: 'Detergente Lavavajillas', cantidadPaquete: 750, unidad: 'ml', categoria: 'Limpieza'),
-    ProductoAlmacen(nombre: 'Jabón Líquido Ropa', cantidadPaquete: 3, unidad: 'L', categoria: 'Limpieza'),
   ];
 
-  // Stock inicial de la despensa de la casa
   final List<ItemDespensa> _inventarioDespensa = [
     ItemDespensa(nombre: 'Fideos Moñito', cantidadActual: 1000, unidad: 'gr', categoria: 'Alimentos'),
     ItemDespensa(nombre: 'Leche Entera', cantidadActual: 2, unidad: 'L', categoria: 'Bebidas'),
-    ItemDespensa(nombre: 'Detergente Lavavajillas', cantidadActual: 750, unidad: 'ml', categoria: 'Limpieza'),
   ];
 
-  void _ingresarCompraADespensa(List<ProductoCompra> productosTicket) {
+  // Histórico de tickets registrados
+  final List<TicketCompra> _historicoTickets = [];
+
+  void _ingresarCompra(TicketCompra ticket) {
     setState(() {
-      for (var prod in productosTicket) {
+      _historicoTickets.add(ticket);
+
+      for (var prod in ticket.productos) {
         final index = _inventarioDespensa.indexWhere(
           (item) => item.nombre.toLowerCase() == prod.nombre.toLowerCase() && item.unidad == prod.unidad,
         );
@@ -132,12 +155,18 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         tiendas: _tiendasGuardadas,
         categorias: _categoriasGuardadas,
         catalogo: _catalogoAlmacen,
-        onFinalizarCompra: _ingresarCompraADespensa,
+        onFinalizarCompra: _ingresarCompra,
       ),
       DespensaConsumoPantalla(
         despensa: _inventarioDespensa,
         categorias: _categoriasGuardadas,
         onActualizar: () => setState(() {}),
+      ),
+      EstadisticasComparadorPantalla(
+        tickets: _historicoTickets,
+        categorias: _categoriasGuardadas,
+        tiendas: _tiendasGuardadas,
+        catalogo: _catalogoAlmacen,
       ),
       GestionCatalogosPantalla(
         tiendas: _tiendasGuardadas,
@@ -153,10 +182,12 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         currentIndex: _indicePestana,
         onTap: (index) => setState(() => _indicePestana = index),
         selectedItemColor: Colors.teal,
+        unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Comprar'),
           BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: 'Despensa'),
+          BottomNavigationBarItem(icon: Icon(Icons.analytics), label: 'Estadísticas'),
           BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Catálogos'),
         ],
       ),
@@ -169,7 +200,7 @@ class RegistroComprasPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
   final List<ProductoAlmacen> catalogo;
-  final Function(List<ProductoCompra>) onFinalizarCompra;
+  final Function(TicketCompra) onFinalizarCompra;
 
   const RegistroComprasPantalla({
     super.key,
@@ -224,7 +255,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
       return;
     }
     if (nombre.isEmpty || paquetes <= 0 || tamanoPaquete <= 0 || precio <= 0) {
-      _mostrarMensaje('Completa el nombre, cantidad, contenido y precio.');
+      _mostrarMensaje('Completa nombre, cantidad, contenido y precio.');
       return;
     }
 
@@ -237,6 +268,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
         unidad: _unidadSeleccionada,
         precioUnitarioPaquete: precio,
         categoria: _categoriaSeleccionada,
+        fecha: DateTime.now(),
       ));
 
       _productoSeleccionado = null;
@@ -247,16 +279,26 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
     });
   }
 
-  void _finalizarYGuardarEnDespensa() {
-    if (_productosTicket.isEmpty) {
-      _mostrarMensaje('Agrega al menos un producto al ticket.');
+  void _finalizarYGuardar() {
+    if (_productosTicket.isEmpty || _tiendaSeleccionada == null) {
+      _mostrarMensaje('Agrega al menos un producto y selecciona una tienda.');
       return;
     }
 
-    widget.onFinalizarCompra(List.from(_productosTicket));
+    final ticket = TicketCompra(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      fecha: DateTime.now(),
+      tienda: _tiendaSeleccionada!,
+      subtotal: _subtotalGeneral,
+      montoDescuento: _montoDescuentoTotal,
+      totalFinal: _totalConDescuento,
+      productos: List.from(_productosTicket),
+    );
+
+    widget.onFinalizarCompra(ticket);
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('¡Compra guardada y sumada al stock de la Despensa!')),
+      const SnackBar(content: Text('¡Compra guardada en estadísticas y sumada a la Despensa!')),
     );
 
     setState(() {
@@ -557,7 +599,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
-                      onPressed: _finalizarYGuardarEnDespensa,
+                      onPressed: _finalizarYGuardar,
                       icon: const Icon(Icons.check_circle),
                       label: const Text('Finalizar Compra y Sumar a Despensa'),
                       style: ElevatedButton.styleFrom(
@@ -609,7 +651,7 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Stock disponible actual: ${item.cantidadActual.toStringAsFixed(1)} ${item.unidad}'),
+              Text('Stock actual: ${item.cantidadActual.toStringAsFixed(1)} ${item.unidad}'),
               const SizedBox(height: 12),
               TextField(
                 controller: consumoController,
@@ -629,10 +671,10 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
             ),
             ElevatedButton(
               onPressed: () {
-                final valorConsumido = double.tryParse(consumoController.text.trim().replaceAll(',', '.')) ?? 0.0;
-                if (valorConsumido > 0) {
+                final valor = double.tryParse(consumoController.text.trim().replaceAll(',', '.')) ?? 0.0;
+                if (valor > 0) {
                   setState(() {
-                    item.cantidadActual -= valorConsumido;
+                    item.cantidadActual -= valor;
                     if (item.cantidadActual < 0) item.cantidadActual = 0;
                   });
                   widget.onActualizar();
@@ -666,7 +708,6 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Filtro por categoría
             DropdownButtonFormField<String>(
               value: _filtroCategoria ?? 'Todas',
               decoration: const InputDecoration(
@@ -683,7 +724,7 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
 
             Expanded(
               child: _itemsFiltrados.isEmpty
-                  ? const Center(child: Text('No hay productos en la despensa todavía.'))
+                  ? const Center(child: Text('No hay productos en la despensa.'))
                   : ListView.builder(
                       itemCount: _itemsFiltrados.length,
                       itemBuilder: (context, index) {
@@ -743,7 +784,229 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
   }
 }
 
-// PESTAÑA 3: GESTIÓN DE TIENDAS, CATEGORÍAS Y CATALOGO
+// PESTAÑA 3: ESTADÍSTICAS Y COMPARADOR DE PRECIOS
+class EstadisticasComparadorPantalla extends StatefulWidget {
+  final List<TicketCompra> tickets;
+  final List<String> categorias;
+  final List<String> tiendas;
+  final List<ProductoAlmacen> catalogo;
+
+  const EstadisticasComparadorPantalla({
+    super.key,
+    required this.tickets,
+    required this.categorias,
+    required this.tiendas,
+    required this.catalogo,
+  });
+
+  @override
+  State<EstadisticasComparadorPantalla> createState() => _EstadisticasComparadorPantallaState();
+}
+
+class _EstadisticasComparadorPantallaState extends State<EstadisticasComparadorPantalla> {
+  String? _productoParaComparar;
+
+  double get _gastoTotalAcumulado => widget.tickets.fold(0, (sum, t) => sum + t.totalFinal);
+
+  Map<String, double> get _gastosPorCategoria {
+    final Map<String, double> mapa = {};
+    for (var t in widget.tickets) {
+      for (var p in t.productos) {
+        mapa[p.categoria] = (mapa[p.categoria] ?? 0) + p.subtotal;
+      }
+    }
+    return mapa;
+  }
+
+  Map<String, double> get _gastosPorTienda {
+    final Map<String, double> mapa = {};
+    for (var t in widget.tickets) {
+      mapa[t.tienda] = (mapa[t.tienda] ?? 0) + t.totalFinal;
+    }
+    return mapa;
+  }
+
+  List<ProductoCompra> get _historialDelProductoSeleccionado {
+    if (_productoParaComparar == null) return [];
+    final List<ProductoCompra> prods = [];
+    for (var t in widget.tickets) {
+      for (var p in t.productos) {
+        if (p.nombre.toLowerCase() == _productoParaComparar!.toLowerCase()) {
+          prods.add(p);
+        }
+      }
+    }
+    return prods;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Obtener nombres de todos los productos que han sido comprados o están en catálogo
+    final nombresProductos = widget.catalogo.map((p) => p.nombre).toSet();
+    for (var t in widget.tickets) {
+      for (var p in t.productos) {
+        nombresProductos.add(p.nombre);
+      }
+    }
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Estadísticas y Comparador'),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.pie_chart), text: 'Gastos'),
+              Tab(icon: Icon(Icons.compare_arrows), text: 'Comparar Precios'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // Sub-Pestaña 1: Resumen de Gastos
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Card(
+                    color: Colors.teal.shade700,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Gasto Total Registrado:', style: TextStyle(color: Colors.white, fontSize: 16)),
+                          Text(
+                            '\$${_gastoTotalAcumulado.toStringAsFixed(2)}',
+                            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  const Text('Gastos por Categoría:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  _gastosPorCategoria.isEmpty
+                      ? const Text('Sin compras registradas.')
+                      : Column(
+                          children: _gastosPorCategoria.entries.map((e) {
+                            final porcentaje = _gastoTotalAcumulado > 0 ? (e.value / _gastoTotalAcumulado) : 0.0;
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        Text('\$${e.value.toStringAsFixed(2)} (${(porcentaje * 100).toStringAsFixed(1)}%)'),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    LinearProgressIndicator(value: porcentaje, minHeight: 8, color: Colors.teal),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                  const SizedBox(height: 16),
+
+                  const Text('Gastos por Tienda:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 8),
+                  _gastosPorTienda.isEmpty
+                      ? const Text('Sin compras registradas.')
+                      : Column(
+                          children: _gastosPorTienda.entries.map((e) {
+                            final porcentaje = _gastoTotalAcumulado > 0 ? (e.value / _gastoTotalAcumulado) : 0.0;
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        Text('\$${e.value.toStringAsFixed(2)} (${(porcentaje * 100).toStringAsFixed(1)}%)'),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    LinearProgressIndicator(value: porcentaje, minHeight: 8, color: Colors.orange),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                ],
+              ),
+            ),
+
+            // Sub-Pestaña 2: Comparador e Histórico de Precios
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: _productoParaComparar,
+                    decoration: const InputDecoration(
+                      labelText: 'Selecciona Producto para Comparar',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: nombresProductos
+                        .map((n) => DropdownMenuItem(value: n, child: Text(n)))
+                        .toList(),
+                    onChanged: (val) => setState(() => _productoParaComparar = val),
+                    hint: const Text('Elije un producto...'),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Expanded(
+                    child: _historialDelProductoSeleccionado.isEmpty
+                        ? const Center(
+                            child: Text('Selecciona un producto que haya sido comprado para ver su comparativa entre tiendas y fechas.'),
+                          )
+                        : ListView.builder(
+                            itemCount: _historialDelProductoSeleccionado.length,
+                            itemBuilder: (context, index) {
+                              final p = _historialDelProductoSeleccionado[index];
+                              final fechaStr = "${p.fecha.day}/${p.fecha.month}/${p.fecha.year}";
+
+                              return Card(
+                                child: ListTile(
+                                  leading: const Icon(Icons.store, color: Colors.teal),
+                                  title: Text('${p.lugar} - \$${p.precioUnitarioPaquete.toStringAsFixed(2)}'),
+                                  subtitle: Text('Fecha: $fechaStr | Paquete de ${p.cantidadPorPaquete} ${p.unidad}'),
+                                  trailing: Text(
+                                    '\$${(p.precioUnitarioPaquete / p.cantidadPorPaquete).toStringAsFixed(2)} / ${p.unidad}',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// PESTAÑA 4: GESTIÓN DE TIENDAS, CATEGORÍAS Y CATALOGO
 class GestionCatalogosPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
