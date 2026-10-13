@@ -24,6 +24,9 @@ jobs:
         with:
           channel: 'stable'
 
+      - name: Generar carpeta nativa de Android
+        run: flutter create . --platforms=android --project-name=gestor_casa
+
       - name: Preparar la app
         run: flutter pub get
 
