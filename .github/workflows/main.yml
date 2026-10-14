@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar el código del repositorio
+      - name: Descargar el código
         uses: actions/checkout@v4
 
       - name: Preparar entorno Java (17)
@@ -19,15 +19,44 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Instalar entorno Flutter
+      - name: Instalar Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: Crear proyecto Android e Inyectar Firebase
+      - name: Crear estructura nativa de Android
+        run: flutter create . --platforms=android --org com.example
+
+      - name: Configurar pubspec.yaml con Firebase
         run: |
-          flutter create . --platforms=android --org com.example
-          flutter pub add firebase_core cloud_firestore firebase_auth
+          cat << 'EOF' > pubspec.yaml
+          name: gestor_casa
+          description: "Gestor de Hogar"
+          publish_to: "none"
+          version: 1.0.0+1
+
+          environment:
+            sdk: ">=3.0.0 <4.0.0"
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            cupertino_icons: ^1.0.6
+            firebase_core: ^2.27.0
+            cloud_firestore: ^4.15.8
+            firebase_auth: ^4.17.8
+
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+            flutter_lints: ^3.0.0
+
+          flutter:
+            uses-material-design: true
+          EOF
+
+      - name: Parchear Gradle para Firebase (SDK 34 + MultiDex)
+        run: |
           python3 -c "
           import os, re
           for root, dirs, files in os.walk('android'):
@@ -54,7 +83,7 @@ jobs:
       - name: Compilar archivo APK Release
         run: flutter build apk --release
 
-      - name: Guardar el APK resultante para descargar
+      - name: Guardar APK resultante
         uses: actions/upload-artifact@v4
         with:
           name: app-release
