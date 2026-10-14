@@ -24,8 +24,13 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Preparar la app
-        run: flutter pub get
+      - name: Generar y configurar Android para Firebase
+        run: |
+          flutter create . --platforms=android --org com.example
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle
+          sed -i 's/flutter.minSdkVersion/21/' android/app/build.gradle
+          sed -i '/defaultConfig {/a \        multiDexEnabled true' android/app/build.gradle
+          flutter pub get
 
       - name: Construir el archivo APK
         run: flutter build apk --release
@@ -33,5 +38,5 @@ jobs:
       - name: Guardar el APK para descargarlo
         uses: actions/upload-artifact@v4
         with:
-          name: app-casa-apk
+          name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
