@@ -24,20 +24,33 @@ jobs:
         with:
           channel: 'stable'
 
+      - name: Inyectar dependencias de Firebase
+        run: |
+          flutter pub add firebase_core cloud_firestore
+
       - name: Generar y configurar Android para Firebase
         run: |
           flutter create . --platforms=android --org com.example
           python3 -c "
-          import re
-          path = 'android/app/build.gradle'
-          with open(path, 'r') as f:
-              content = f.read()
-          content = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', content)
-          content = re.sub(r'minSdk\s*=.*', 'minSdk = 21', content)
-          if 'multiDexEnabled' not in content:
-              content = re.sub(r'(defaultConfig\s*\{)', r'\1\n        multiDexEnabled true', content)
-          with open(path, 'w') as f:
-              f.write(content)
+          import os, re
+          for root, dirs, files in os.walk('android'):
+              for file in files:
+                  if file in ['build.gradle', 'build.gradle.kts'] and 'app' in root:
+                      path = os.path.join(root, file)
+                      with open(path, 'r') as f:
+                          content = f.read()
+                      if file.endswith('.kts'):
+                          content = re.sub(r'compileSdk\s*=.*', 'compileSdk = 34', content)
+                          content = re.sub(r'minSdk\s*=.*', 'minSdk = 21', content)
+                          if 'multiDexEnabled' not in content:
+                              content = re.sub(r'(defaultConfig\s*\{)', r'\1\n        multiDexEnabled = true', content)
+                      else:
+                          content = re.sub(r'compileSdkVersion\s+.*', 'compileSdkVersion 34', content)
+                          content = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', content)
+                          if 'multiDexEnabled' not in content:
+                              content = re.sub(r'(defaultConfig\s*\{)', r'\1\n        multiDexEnabled true', content)
+                      with open(path, 'w') as f:
+                          f.write(content)
           "
           flutter pub get
 
