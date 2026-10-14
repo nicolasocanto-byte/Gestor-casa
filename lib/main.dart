@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,12 +32,220 @@ class MiAppCasa extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: const PantallaNavegacionPrincipal(),
+      home: const EnrutadorAutenticacion(),
     );
   }
 }
 
-// MODELOS CON CONVERSIÓN SEGURA DE TIPOS
+// ENRUTADOR DE AUTENTICACIÓN Y ROLES
+class EnrutadorAutenticacion extends StatelessWidget {
+  const EnrutadorAutenticacion({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+        if (user == null) {
+          return const PantallaLogin();
+        }
+
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('usuarios').doc(user.uid).snapshots(),
+          builder: (context, docSnap) {
+            if (docSnap.connectionState == ConnectionState.waiting) {
+              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            }
+
+            UsuarioApp usuarioApp;
+            if (!docSnap.hasData || !docSnap.data!.exists) {
+              usuarioApp = UsuarioApp(
+                uid: user.uid,
+                email: user.email ?? '',
+                nombre: user.email?.split('@').first ?? 'Usuario',
+                rol: 'admin',
+              );
+              FirebaseFirestore.instance.collection('usuarios').doc(user.uid).set({
+                'email': usuarioApp.email,
+                'nombre': usuarioApp.nombre,
+                'rol': 'admin',
+                'fechaCreacion': DateTime.now().toIso8601String(),
+              });
+            } else {
+              usuarioApp = UsuarioApp.fromFirestore(docSnap.data!);
+            }
+
+            return PantallaNavegacionPrincipal(usuarioActual: usuarioApp);
+          },
+        );
+      },
+    );
+  }
+}
+
+// PANTALLA DE LOGIN
+class PantallaLogin extends StatefulWidget {
+  const PantallaLogin({super.key});
+
+  @override
+  State<PantallaLogin> createState() => _PantallaLoginState();
+}
+
+class _PantallaLoginState extends State<PantallaLogin> {
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  bool _cargando = false;
+  String? _errorMsg;
+
+  void _iniciarSesion() async {
+    final email = _emailCtrl.text.trim();
+    final pass = _passCtrl.text.trim();
+
+    if (email.isEmpty || pass.isEmpty) {
+      setState(() => _errorMsg = 'Ingresa tu correo y contraseña.');
+      return;
+    }
+
+    setState(() {
+      _cargando = true;
+      _errorMsg = null;
+    });
+
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: pass,
+      );
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _errorMsg = e.message ?? 'Error al iniciar sesión.';
+      });
+    } catch (e) {
+      setState(() {
+        _errorMsg = 'Error inesperado al conectar.';
+      });
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.teal.shade50,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Card(
+            elevation: 6,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.house_siding, size: 64, color: Colors.teal),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Gestor de Hogar',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal),
+                  ),
+                  const Text('Inicia sesión con tu cuenta', style: TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 20),
+
+                  if (_errorMsg != null)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(8)),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(_errorMsg!, style: const TextStyle(color: Colors.red))),
+                        ],
+                      ),
+                    ),
+
+                  TextField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Correo Electrónico',
+                      prefixIcon: Icon(Icons.email),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  TextField(
+                    controller: _passCtrl,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Contraseña',
+                      prefixIcon: Icon(Icons.lock),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  _cargando
+                      ? const CircularProgressIndicator()
+                      : ElevatedButton.icon(
+                          onPressed: _iniciarSesion,
+                          icon: const Icon(Icons.login),
+                          label: const Text('Ingresar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// MODELOS DE DATOS
+class UsuarioApp {
+  final String uid;
+  final String email;
+  final String nombre;
+  final String rol;
+
+  UsuarioApp({
+    required this.uid,
+    required this.email,
+    required this.nombre,
+    required this.rol,
+  });
+
+  factory UsuarioApp.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+    return UsuarioApp(
+      uid: doc.id,
+      email: data?['email'] ?? '',
+      nombre: data?['nombre'] ?? '',
+      rol: data?['rol'] ?? 'miembro',
+    );
+  }
+
+  bool get esAdmin => rol.toLowerCase() == 'admin' || rol.toLowerCase() == 'administrador';
+}
+
 class ProductoAlmacen {
   final String id;
   final String nombre;
@@ -61,15 +270,6 @@ class ProductoAlmacen {
       unidad: data?['unidad'] ?? 'gr',
       categoria: data?['categoria'] ?? 'General',
     );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'nombre': nombre,
-      'cantidadPaquete': cantidadPaquete,
-      'unidad': unidad,
-      'categoria': categoria,
-    };
   }
 
   String get descripcionCompleta => '[$categoria] $nombre ($cantidadPaquete $unidad)';
@@ -196,9 +396,47 @@ class TicketCompra {
   String get etiquetaVisual => '$tienda - ${fecha.day}/${fecha.month}/${fecha.year} (\$$totalFinal)';
 }
 
-// NAVEGACIÓN PRINCIPAL CON STREAMBUILDER EN TIEMPO REAL
+class RegistroConsumo {
+  final String id;
+  final String productoNombre;
+  final double cantidad;
+  final String unidad;
+  final String categoria;
+  final DateTime fecha;
+  final String usuarioEmail;
+
+  RegistroConsumo({
+    required this.id,
+    required this.productoNombre,
+    required this.cantidad,
+    required this.unidad,
+    required this.categoria,
+    required this.fecha,
+    required this.usuarioEmail,
+  });
+
+  factory RegistroConsumo.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+    return RegistroConsumo(
+      id: doc.id,
+      productoNombre: data?['productoNombre'] ?? '',
+      cantidad: ((data?['cantidad'] ?? 0.0) as num).toDouble(),
+      unidad: data?['unidad'] ?? 'gr',
+      categoria: data?['categoria'] ?? 'General',
+      fecha: DateTime.parse(data?['fecha'] ?? DateTime.now().toIso8601String()),
+      usuarioEmail: data?['usuarioEmail'] ?? '',
+    );
+  }
+}
+
+// NAVEGACIÓN PRINCIPAL
 class PantallaNavegacionPrincipal extends StatefulWidget {
-  const PantallaNavegacionPrincipal({super.key});
+  final UsuarioApp usuarioActual;
+
+  const PantallaNavegacionPrincipal({
+    super.key,
+    required this.usuarioActual,
+  });
 
   @override
   State<PantallaNavegacionPrincipal> createState() => _PantallaNavegacionPrincipalState();
@@ -212,6 +450,27 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Hola, ${widget.usuarioActual.nombre}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              'Rol: ${widget.usuarioActual.rol.toUpperCase()} | ${widget.usuarioActual.email}',
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Cerrar Sesión',
+            onPressed: () => FirebaseAuth.instance.signOut(),
+          ),
+        ],
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: db.collection('tiendas').snapshots(),
         builder: (context, snapshotTiendas) {
@@ -247,15 +506,30 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
                               ? snapshotTickets.data!.docs.map((d) => TicketCompra.fromFirestore(d)).toList()
                               : <TicketCompra>[];
 
-                          final paginas = [
-                            RegistroComprasPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
-                            DespensaConsumoPantalla(despensa: despensa, categorias: categorias),
-                            SimuladorComprasExcelPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
-                            ComparadorTicketsExcelPantalla(tickets: tickets),
-                            GestionCatalogosPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
-                          ];
+                          return StreamBuilder<QuerySnapshot>(
+                            stream: db.collection('consumos').snapshots(),
+                            builder: (context, snapshotConsumos) {
+                              final consumos = snapshotConsumos.hasData
+                                  ? snapshotConsumos.data!.docs.map((d) => RegistroConsumo.fromFirestore(d)).toList()
+                                  : <RegistroConsumo>[];
 
-                          return paginas[_indicePestana];
+                              final paginas = [
+                                RegistroComprasPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
+                                DespensaConsumoPantalla(despensa: despensa, categorias: categorias),
+                                ConsumoEstadisticasPantalla(tickets: tickets, consumos: consumos, categorias: categorias),
+                                SimuladorComprasExcelPantalla(tiendas: tiendas, categorias: categorias, catalogo: catalogo),
+                                ComparadorTicketsExcelPantalla(tickets: tickets),
+                                GestionCatalogosYUsuariosPantalla(
+                                  tiendas: tiendas,
+                                  categorias: categorias,
+                                  catalogo: catalogo,
+                                  usuarioActual: widget.usuarioActual,
+                                ),
+                              ];
+
+                              return paginas[_indicePestana];
+                            },
+                          );
                         },
                       );
                     },
@@ -275,16 +549,17 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Comprar'),
           BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: 'Despensa'),
-          BottomNavigationBarItem(icon: Icon(Icons.table_chart), label: 'Simulador Excel'),
-          BottomNavigationBarItem(icon: Icon(Icons.compare), label: 'Comparar Tickets'),
-          BottomNavigationBarItem(icon: Icon(Icons.inventory_2), label: 'Catálogos'),
+          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Consumos'),
+          BottomNavigationBarItem(icon: Icon(Icons.table_chart), label: 'Simulador'),
+          BottomNavigationBarItem(icon: Icon(Icons.compare), label: 'Comparar'),
+          BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings), label: 'Gestión'),
         ],
       ),
     );
   }
 }
 
-// TAB 1: REGISTRO DE COMPRAS CON SYNC FIREBASE
+// PESTAÑA 1: REGISTRO DE COMPRAS
 class RegistroComprasPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -450,287 +725,281 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Registrar Compra'),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: DropdownButtonFormField<String>(
-                  value: _tiendaSeleccionada,
-                  decoration: const InputDecoration(
-                    labelText: 'Seleccionar Tienda / Comercio',
-                    prefixIcon: Icon(Icons.store),
-                    border: OutlineInputBorder(),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: DropdownButtonFormField<String>(
+                value: _tiendaSeleccionada,
+                decoration: const InputDecoration(
+                  labelText: 'Seleccionar Tienda / Comercio',
+                  prefixIcon: Icon(Icons.store),
+                  border: OutlineInputBorder(),
+                ),
+                items: widget.tiendas.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                onChanged: (val) => setState(() => _tiendaSeleccionada = val),
+                hint: const Text('Elije una tienda'),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Añadir Producto al Ticket', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _categoriaFiltro ?? 'Todas',
+                          decoration: const InputDecoration(
+                            labelText: 'Filtrar Catálogo',
+                            prefixIcon: Icon(Icons.filter_list),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: ['Todas', ...widget.categorias]
+                              .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                              .toList(),
+                          onChanged: (val) => setState(() {
+                            _categoriaFiltro = val;
+                            _productoSeleccionado = null;
+                          }),
+                        ),
+                      ),
+                    ],
                   ),
-                  items: widget.tiendas.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                  onChanged: (val) => setState(() => _tiendaSeleccionada = val),
-                  hint: const Text('Elije una tienda'),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
+                  const SizedBox(height: 10),
 
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Añadir Producto al Ticket', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 10),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: _categoriaFiltro ?? 'Todas',
-                            decoration: const InputDecoration(
-                              labelText: 'Filtrar Catálogo',
-                              prefixIcon: Icon(Icons.filter_list),
-                              border: OutlineInputBorder(),
-                            ),
-                            items: ['Todas', ...widget.categorias]
-                                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                                .toList(),
-                            onChanged: (val) => setState(() {
-                              _categoriaFiltro = val;
-                              _productoSeleccionado = null;
-                            }),
-                          ),
-                        ),
-                      ],
+                  DropdownButtonFormField<ProductoAlmacen>(
+                    value: _productoSeleccionado,
+                    decoration: const InputDecoration(
+                      labelText: 'Cargar desde Catálogo',
+                      prefixIcon: Icon(Icons.inventory),
+                      border: OutlineInputBorder(),
                     ),
-                    const SizedBox(height: 10),
-
-                    DropdownButtonFormField<ProductoAlmacen>(
-                      value: _productoSeleccionado,
-                      decoration: const InputDecoration(
-                        labelText: 'Cargar desde Catálogo',
-                        prefixIcon: Icon(Icons.inventory),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _productosFiltrados
-                          .map((p) => DropdownMenuItem(value: p, child: Text(p.descripcionCompleta)))
-                          .toList(),
-                      onChanged: _alSeleccionarProducto,
-                      hint: const Text('Buscar producto guardado...'),
-                    ),
-                    const SizedBox(height: 10),
-
-                    TextField(
-                      controller: _nombreManualController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre del Producto',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: _tamanoPaqueteController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'Contenido c/u',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 1,
-                          child: DropdownButtonFormField<String>(
-                            value: _unidadSeleccionada,
-                            decoration: const InputDecoration(labelText: 'Unid.', border: OutlineInputBorder()),
-                            items: _unidadesDisponibles
-                                .map((u) => DropdownMenuItem(value: u, child: Text(u)))
-                                .toList(),
-                            onChanged: (val) {
-                              if (val != null) setState(() => _unidadSeleccionada = val);
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _paquetesController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Cant. Paquetes',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: _precioPaqueteController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'Precio x Paq. (\$)',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    ElevatedButton.icon(
-                      onPressed: _agregarProducto,
-                      icon: const Icon(Icons.add_shopping_cart),
-                      label: const Text('Agregar al Ticket'),
-                      style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(45)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            const Text('Productos en el Ticket:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-
-            _productosTicket.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(child: Text('El ticket está vacío.')),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _productosTicket.length,
-                    itemBuilder: (context, index) {
-                      final prod = _productosTicket[index];
-                      final precioFinalPaquete = _calcularPrecioFinalPorPaquete(prod);
-
-                      return Card(
-                        child: ListTile(
-                          title: Text('[${prod.categoria}] ${prod.nombre} (x${prod.paquetesComprados})'),
-                          subtitle: Text(
-                            'Original: \$${prod.precioUnitarioPaquete.toStringAsFixed(2)} c/u\n'
-                            'Con desc.: \$${precioFinalPaquete.toStringAsFixed(2)} c/u (${prod.cantidadTotalProd} ${prod.unidad} total)',
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '\$${(precioFinalPaquete * prod.paquetesComprados).toStringAsFixed(2)}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () => setState(() => _productosTicket.removeAt(index)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                    items: _productosFiltrados
+                        .map((p) => DropdownMenuItem(value: p, child: Text(p.descripcionCompleta)))
+                        .toList(),
+                    onChanged: _alSeleccionarProducto,
+                    hint: const Text('Buscar producto guardado...'),
                   ),
-            const SizedBox(height: 12),
+                  const SizedBox(height: 10),
 
-            Card(
-              color: Colors.teal.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: _descuentoController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            onChanged: (_) => setState(() {}),
-                            decoration: InputDecoration(
-                              labelText: _descuentoEnPorcentaje ? 'Descuento (%)' : 'Descuento (\$)',
-                              prefixIcon: const Icon(Icons.discount),
-                              border: const OutlineInputBorder(),
-                            ),
+                  TextField(
+                    controller: _nombreManualController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Producto',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: _tamanoPaqueteController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Contenido c/u',
+                            border: OutlineInputBorder(),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 1,
-                          child: SegmentedButton<bool>(
-                            segments: const [
-                              ButtonSegment(value: true, label: Text('%')),
-                              ButtonSegment(value: false, label: Text('\$')),
-                            ],
-                            selected: {_descuentoEnPorcentaje},
-                            onSelectionChanged: (val) => setState(() => _descuentoEnPorcentaje = val.first),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Subtotal:'),
-                        Text('\$${_subtotalGeneral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(_descuentoEnPorcentaje ? 'Descuento (${_valorDescuento.toStringAsFixed(1)}%):' : 'Descuento Fijo:'),
-                        Text('-\$${_montoDescuentoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Colors.green)),
-                      ],
-                    ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('TOTAL FINAL:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                        Text(
-                          '\$${_totalConDescuento.toStringAsFixed(2)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.teal),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: _finalizarYGuardarEnNube,
-                      icon: const Icon(Icons.cloud_upload),
-                      label: const Text('Finalizar Compra y Sincronizar en Nube'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(45),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 1,
+                        child: DropdownButtonFormField<String>(
+                          value: _unidadSeleccionada,
+                          decoration: const InputDecoration(labelText: 'Unid.', border: OutlineInputBorder()),
+                          items: _unidadesDisponibles
+                              .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _unidadSeleccionada = val);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _paquetesController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Cant. Paquetes',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _precioPaqueteController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: 'Precio x Paq. (\$)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  ElevatedButton.icon(
+                    onPressed: _agregarProducto,
+                    icon: const Icon(Icons.add_shopping_cart),
+                    label: const Text('Agregar al Ticket'),
+                    style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(45)),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+
+          const Text('Productos en el Ticket:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+
+          _productosTicket.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: Text('El ticket está vacío.')),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _productosTicket.length,
+                  itemBuilder: (context, index) {
+                    final prod = _productosTicket[index];
+                    final precioFinalPaquete = _calcularPrecioFinalPorPaquete(prod);
+
+                    return Card(
+                      child: ListTile(
+                        title: Text('[${prod.categoria}] ${prod.nombre} (x${prod.paquetesComprados})'),
+                        subtitle: Text(
+                          'Original: \$${prod.precioUnitarioPaquete.toStringAsFixed(2)} c/u\n'
+                          'Con desc.: \$${precioFinalPaquete.toStringAsFixed(2)} c/u (${prod.cantidadTotalProd} ${prod.unidad} total)',
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '\$${(precioFinalPaquete * prod.paquetesComprados).toStringAsFixed(2)}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => setState(() => _productosTicket.removeAt(index)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+          const SizedBox(height: 12),
+
+          Card(
+            color: Colors.teal.shade50,
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: _descuentoController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            labelText: _descuentoEnPorcentaje ? 'Descuento (%)' : 'Descuento (\$)',
+                            prefixIcon: const Icon(Icons.discount),
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 1,
+                        child: SegmentedButton<bool>(
+                          segments: const [
+                            ButtonSegment(value: true, label: Text('%')),
+                            ButtonSegment(value: false, label: Text('\$')),
+                          ],
+                          selected: {_descuentoEnPorcentaje},
+                          onSelectionChanged: (val) => setState(() => _descuentoEnPorcentaje = val.first),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Subtotal:'),
+                      Text('\$${_subtotalGeneral.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_descuentoEnPorcentaje ? 'Descuento (${_valorDescuento.toStringAsFixed(1)}%):' : 'Descuento Fijo:'),
+                      Text('-\$${_montoDescuentoTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Colors.green)),
+                    ],
+                  ),
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('TOTAL FINAL:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                      Text(
+                        '\$${_totalConDescuento.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.teal),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _finalizarYGuardarEnNube,
+                    icon: const Icon(Icons.cloud_upload),
+                    label: const Text('Finalizar Compra y Sincronizar en Nube'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// TAB 2: DESPENSA CON DESCUENTO DE STOCK EN NUBE
+// PESTAÑA 2: DESPENSA CON REGISTRO DE CONSUMO
 class DespensaConsumoPantalla extends StatefulWidget {
   final List<ItemDespensa> despensa;
   final List<String> categorias;
@@ -785,8 +1054,19 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
                   double nuevoStock = item.cantidadActual - valor;
                   if (nuevoStock < 0) nuevoStock = 0;
 
+                  final userEmail = FirebaseAuth.instance.currentUser?.email ?? 'Anónimo';
+
                   await FirebaseFirestore.instance.collection('despensa').doc(item.id).update({
                     'cantidadActual': nuevoStock,
+                  });
+
+                  await FirebaseFirestore.instance.collection('consumos').add({
+                    'productoNombre': item.nombre,
+                    'cantidad': valor,
+                    'unidad': item.unidad,
+                    'categoria': item.categoria,
+                    'fecha': DateTime.now().toIso8601String(),
+                    'usuarioEmail': userEmail,
                   });
 
                   if (context.mounted) Navigator.pop(context);
@@ -809,93 +1089,490 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Stock de la Despensa'),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<String>(
-              value: _filtroCategoria ?? 'Todas',
-              decoration: const InputDecoration(
-                labelText: 'Filtrar por Categoría',
-                prefixIcon: Icon(Icons.filter_list),
-                border: OutlineInputBorder(),
-              ),
-              items: ['Todas', ...widget.categorias]
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (val) => setState(() => _filtroCategoria = val),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DropdownButtonFormField<String>(
+            value: _filtroCategoria ?? 'Todas',
+            decoration: const InputDecoration(
+              labelText: 'Filtrar por Categoría',
+              prefixIcon: Icon(Icons.filter_list),
+              border: OutlineInputBorder(),
             ),
-            const SizedBox(height: 16),
+            items: ['Todas', ...widget.categorias]
+                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                .toList(),
+            onChanged: (val) => setState(() => _filtroCategoria = val),
+          ),
+          const SizedBox(height: 16),
 
-            Expanded(
-              child: _itemsFiltrados.isEmpty
-                  ? const Center(child: Text('No hay productos en la despensa.'))
-                  : ListView.builder(
-                      itemCount: _itemsFiltrados.length,
-                      itemBuilder: (context, index) {
-                        final item = _itemsFiltrados[index];
-                        final sinStock = item.cantidadActual <= 0;
+          Expanded(
+            child: _itemsFiltrados.isEmpty
+                ? const Center(child: Text('No hay productos en la despensa.'))
+                : ListView.builder(
+                    itemCount: _itemsFiltrados.length,
+                    itemBuilder: (context, index) {
+                      final item = _itemsFiltrados[index];
+                      final sinStock = item.cantidadActual <= 0;
 
-                        return Card(
-                          color: sinStock ? Colors.red.shade50 : null,
-                          child: ListTile(
-                            leading: Icon(
-                              sinStock ? Icons.warning_amber_rounded : Icons.kitchen,
-                              color: sinStock ? Colors.red : Colors.teal,
-                              size: 32,
-                            ),
-                            title: Text(
-                              item.nombre,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: sinStock ? Colors.red : Colors.black,
-                              ),
-                            ),
-                            subtitle: Text('Categoría: ${item.categoria}'),
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  sinStock ? 'AGOTADO' : '${item.cantidadActual.toStringAsFixed(1)} ${item.unidad}',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: sinStock ? Colors.red : Colors.teal.shade800,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                                    minimumSize: const Size(60, 28),
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  onPressed: () => _abrirModalConsumo(item),
-                                  icon: const Icon(Icons.remove, size: 16),
-                                  label: const Text('Consumir', style: TextStyle(fontSize: 12)),
-                                ),
-                              ],
+                      return Card(
+                        color: sinStock ? Colors.red.shade50 : null,
+                        child: ListTile(
+                          leading: Icon(
+                            sinStock ? Icons.warning_amber_rounded : Icons.kitchen,
+                            color: sinStock ? Colors.red : Colors.teal,
+                            size: 32,
+                          ),
+                          title: Text(
+                            item.nombre,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: sinStock ? Colors.red : Colors.black,
                             ),
                           ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
+                          subtitle: Text('Categoría: ${item.categoria}'),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                sinStock ? 'AGOTADO' : '${item.cantidadActual.toStringAsFixed(1)} ${item.unidad}',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: sinStock ? Colors.red : Colors.teal.shade800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                                  minimumSize: const Size(60, 28),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () => _abrirModalConsumo(item),
+                                icon: const Icon(Icons.remove, size: 16),
+                                label: const Text('Consumir', style: TextStyle(fontSize: 12)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// TAB 3: SIMULADOR EXCEL MULTITIENDA
+// PESTAÑA 3: CONSUMO Y ESTADÍSTICAS (SEMANAL, MENSUAL Y COMPARATIVA)
+class ConsumoEstadisticasPantalla extends StatefulWidget {
+  final List<TicketCompra> tickets;
+  final List<RegistroConsumo> consumos;
+  final List<String> categorias;
+
+  const ConsumoEstadisticasPantalla({
+    super.key,
+    required this.tickets,
+    required this.consumos,
+    required this.categorias,
+  });
+
+  @override
+  State<ConsumoEstadisticasPantalla> createState() => _ConsumoEstadisticasPantallaState();
+}
+
+class _ConsumoEstadisticasPantallaState extends State<ConsumoEstadisticasPantalla> {
+  int _modoVista = 0; // 0: Semanal, 1: Mensual, 2: Comparativa Meses
+
+  late String _mesSeleccionadoA;
+  late String _mesSeleccionadoB;
+
+  @override
+  void initState() {
+    super.initState();
+    final ahora = DateTime.now();
+    _mesSeleccionadoA = _formatearMesAño(ahora);
+    final mesAnterior = DateTime(ahora.year, ahora.month - 1, 1);
+    _mesSeleccionadoB = _formatearMesAño(mesAnterior);
+  }
+
+  String _formatearMesAño(DateTime d) {
+    final meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    return '${meses[d.month - 1]} ${d.year}';
+  }
+
+  List<String> get _obtenerListaMesesDisponibles {
+    final Set<String> meses = {};
+    final ahora = DateTime.now();
+    meses.add(_formatearMesAño(ahora));
+
+    for (var t in widget.tickets) {
+      meses.add(_formatearMesAño(t.fecha));
+    }
+    for (var c in widget.consumos) {
+      meses.add(_formatearMesAño(c.fecha));
+    }
+    return meses.toList()..sort((a, b) => b.compareTo(a));
+  }
+
+  // CÁLCULOS SEMANALES
+  bool _esDeEstaSemana(DateTime f) {
+    final ahora = DateTime.now();
+    final inicioSemana = ahora.subtract(Duration(days: ahora.weekday - 1));
+    final fechaNormalizada = DateTime(f.year, f.month, f.day);
+    final inicioNormalizado = DateTime(inicioSemana.year, inicioSemana.month, inicioSemana.day);
+    return fechaNormalizada.isAfter(inicioNormalizado.subtract(const Duration(days: 1)));
+  }
+
+  double get _gastoEstaSemana {
+    return widget.tickets
+        .where((t) => _esDeEstaSemana(t.fecha))
+        .fold(0.0, (sum, item) => sum + item.totalFinal);
+  }
+
+  List<RegistroConsumo> get _consumosEstaSemana {
+    return widget.consumos.where((c) => _esDeEstaSemana(c.fecha)).toList();
+  }
+
+  // CÁLCULOS MENSUALES
+  double _gastoDelMes(String mesAño) {
+    return widget.tickets
+        .where((t) => _formatearMesAño(t.fecha) == mesAño)
+        .fold(0.0, (sum, item) => sum + item.totalFinal);
+  }
+
+  List<RegistroConsumo> _consumosDelMes(String mesAño) {
+    return widget.consumos.where((c) => _formatearMesAño(c.fecha) == mesAño).toList();
+  }
+
+  Map<String, double> _gastosPorCategoriaEnMes(String mesAño) {
+    final Map<String, double> mapa = {};
+    for (var t in widget.tickets.where((t) => _formatearMesAño(t.fecha) == mesAño)) {
+      for (var p in t.productos) {
+        mapa[p.categoria] = (mapa[p.categoria] ?? 0.0) + p.subtotal;
+      }
+    }
+    return mapa;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        children: [
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 0, label: Text('Semanal'), icon: Icon(Icons.view_week)),
+              ButtonSegment(value: 1, label: Text('Mensual'), icon: Icon(Icons.calendar_month)),
+              ButtonSegment(value: 2, label: Text('Comparativa'), icon: Icon(Icons.compare_arrows)),
+            ],
+            selected: {_modoVista},
+            onSelectionChanged: (val) => setState(() => _modoVista = val.first),
+          ),
+          const SizedBox(height: 12),
+
+          Expanded(
+            child: SingleChildScrollView(
+              child: _modoVista == 0
+                  ? _buildVistaSemanal()
+                  : _modoVista == 1
+                      ? _buildVistaMensual()
+                      : _buildVistaComparativa(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVistaSemanal() {
+    final consumosSemana = _consumosEstaSemana;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Card(
+          color: Colors.teal.shade50,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Gasto en Compras (Esta Semana):', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                    SizedBox(height: 4),
+                    Text('Semana Actual', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                Text(
+                  '\$${_gastoEstaSemana.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.teal),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        const Text('Consumos de Despensa Esta Semana:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+
+        consumosSemana.isEmpty
+            ? const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: Center(child: Text('No hay registros de consumo en esta semana.')),
+                ),
+              )
+            : ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: consumosSemana.length,
+                itemBuilder: (context, index) {
+                  final item = consumosSemana[index];
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.remove_circle_outline, color: Colors.orange),
+                      title: Text('${item.productoNombre} (${item.cantidad} ${item.unidad})'),
+                      subtitle: Text('Categoría: ${item.categoria} | Usuario: ${item.usuarioEmail}'),
+                      trailing: Text('${item.fecha.day}/${item.fecha.month}'),
+                    ),
+                  );
+                },
+              ),
+      ],
+    );
+  }
+
+  Widget _buildVistaMensual() {
+    final meses = _obtenerListaMesesDisponibles;
+    final gastoMes = _gastoDelMes(_mesSeleccionadoA);
+    final consumosMes = _consumosDelMes(_mesSeleccionadoA);
+    final categoriasGasto = _gastosPorCategoriaEnMes(_mesSeleccionadoA);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          value: meses.contains(_mesSeleccionadoA) ? _mesSeleccionadoA : meses.first,
+          decoration: const InputDecoration(
+            labelText: 'Seleccionar Mes de Análisis',
+            prefixIcon: Icon(Icons.calendar_today),
+            border: OutlineInputBorder(),
+          ),
+          items: meses.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+          onChanged: (val) {
+            if (val != null) setState(() => _mesSeleccionadoA = val);
+          },
+        ),
+        const SizedBox(height: 12),
+
+        Card(
+          color: Colors.teal.shade50,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Total Invertido en Compras:', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    Text(_mesSeleccionadoA, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                Text(
+                  '\$${gastoMes.toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.teal),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        const Text('Distribución por Categoría:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+
+        categoriasGasto.isEmpty
+            ? const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('Sin compras en este mes.'))))
+            : Column(
+                children: categoriasGasto.entries.map((e) {
+                  final porcentaje = gastoMes > 0 ? (e.value / gastoMes) * 100 : 0.0;
+                  return Card(
+                    child: ListTile(
+                      title: Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text('${porcentaje.toStringAsFixed(1)}% del total gastado'),
+                      trailing: Text('\$${e.value.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                  );
+                }).toList(),
+              ),
+        const SizedBox(height: 16),
+
+        const Text('Resumen de Consumo de Stock en el Mes:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+
+        consumosMes.isEmpty
+            ? const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('Sin consumos registrados en este mes.'))))
+            : ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: consumosMes.length,
+                itemBuilder: (context, index) {
+                  final c = consumosMes[index];
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.fastfood, color: Colors.teal),
+                      title: Text(c.productoNombre),
+                      subtitle: Text('Consumido: ${c.cantidad} ${c.unidad} | Categoría: ${c.categoria}'),
+                      trailing: Text('${c.fecha.day}/${c.fecha.month}/${c.fecha.year}'),
+                    ),
+                  );
+                },
+              ),
+      ],
+    );
+  }
+
+  Widget _buildVistaComparativa() {
+    final meses = _obtenerListaMesesDisponibles;
+    if (meses.length < 2 && !meses.contains(_mesSeleccionadoB)) {
+      meses.add(_mesSeleccionadoB);
+    }
+
+    final gastoA = _gastoDelMes(_mesSeleccionadoA);
+    final gastoB = _gastoDelMes(_mesSeleccionadoB);
+
+    final variacionGasto = gastoB == 0 ? (gastoA > 0 ? 100.0 : 0.0) : ((gastoA - gastoB) / gastoB) * 100;
+
+    final catA = _gastosPorCategoriaEnMes(_mesSeleccionadoA);
+    final catB = _gastosPorCategoriaEnMes(_mesSeleccionadoB);
+
+    final Set<String> todasCategorias = {...catA.keys, ...catB.keys};
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: meses.contains(_mesSeleccionadoA) ? _mesSeleccionadoA : meses.first,
+                decoration: const InputDecoration(labelText: 'Mes Reciente (A)', border: OutlineInputBorder()),
+                items: meses.map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _mesSeleccionadoA = val);
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: meses.contains(_mesSeleccionadoB) ? _mesSeleccionadoB : (meses.length > 1 ? meses[1] : meses.first),
+                decoration: const InputDecoration(labelText: 'Mes Anterior (B)', border: OutlineInputBorder()),
+                items: meses.map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _mesSeleccionadoB = val);
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                const Text('Comparativa de Gasto Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        Text(_mesSeleccionadoA, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text('\$${gastoA.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.teal)),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        Text('Variación', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: variacionGasto > 0 ? Colors.red.shade100 : Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${variacionGasto >= 0 ? "+" : ""}${variacionGasto.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: variacionGasto > 0 ? Colors.red.shade900 : Colors.green.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        Text(_mesSeleccionadoB, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text('\$${gastoB.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blueGrey)),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        const Text('Comparativa por Categoría (\$):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+
+        todasCategorias.isEmpty
+            ? const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('No hay datos para comparar.'))))
+            : DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.teal.shade50),
+                columns: [
+                  const DataColumn(label: Text('Categoría', style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(_mesSeleccionadoA, style: const TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(_mesSeleccionadoB, style: const TextStyle(fontWeight: FontWeight.bold))),
+                ],
+                rows: todasCategorias.map((cat) {
+                  final valA = catA[cat] ?? 0.0;
+                  final valB = catB[cat] ?? 0.0;
+
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(cat, style: const TextStyle(fontWeight: FontWeight.bold))),
+                      DataCell(Text('\$${valA.toStringAsFixed(2)}')),
+                      DataCell(Text('\$${valB.toStringAsFixed(2)}')),
+                    ],
+                  );
+                }).toList(),
+              ),
+      ],
+    );
+  }
+}
+
+// PESTAÑA 4: SIMULADOR EXCEL MULTITIENDA
 class SimuladorComprasExcelPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -1052,80 +1729,70 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Simulador Excel Multitienda'),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Cantidad de Comercios:', style: TextStyle(fontWeight: FontWeight.bold)),
-                        SegmentedButton<int>(
-                          segments: const [
-                            ButtonSegment(value: 2, label: Text('2')),
-                            ButtonSegment(value: 3, label: Text('3')),
-                            ButtonSegment(value: 4, label: Text('4')),
-                          ],
-                          selected: {_cantidadColumnas},
-                          onSelectionChanged: (val) {
-                            setState(() => _cantidadColumnas = val.first);
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Cantidad de Comercios:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 2, label: Text('2')),
+                      ButtonSegment(value: 3, label: Text('3')),
+                      ButtonSegment(value: 4, label: Text('4')),
+                    ],
+                    selected: {_cantidadColumnas},
+                    onSelectionChanged: (val) {
+                      setState(() => _cantidadColumnas = val.first);
+                    },
+                  ),
+                ],
               ),
             ),
           ),
+        ),
 
-          Expanded(
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                  child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
-                    columnSpacing: 16,
-                    dataRowMinHeight: 48,
-                    columns: [
-                      const DataColumn(label: Text('Productos (Despensa)', style: TextStyle(fontWeight: FontWeight.bold))),
-                      for (int col = 0; col < _cantidadColumnas; col++)
-                        DataColumn(
-                          label: SizedBox(
-                            width: 140,
-                            child: DropdownButtonFormField<String>(
-                              value: _tiendasSeleccionadas[col],
-                              isExpanded: true,
-                              decoration: const InputDecoration(border: InputBorder.none),
-                              items: widget.tiendas
-                                  .map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis)))
-                                  .toList(),
-                              onChanged: (val) => setState(() => _tiendasSeleccionadas[col] = val),
-                              hint: Text('Tienda ${col + 1}'),
-                            ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: DataTable(
+                  headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
+                  columnSpacing: 16,
+                  dataRowMinHeight: 48,
+                  columns: [
+                    const DataColumn(label: Text('Productos (Despensa)', style: TextStyle(fontWeight: FontWeight.bold))),
+                    for (int col = 0; col < _cantidadColumnas; col++)
+                      DataColumn(
+                        label: SizedBox(
+                          width: 140,
+                          child: DropdownButtonFormField<String>(
+                            value: _tiendasSeleccionadas[col],
+                            isExpanded: true,
+                            decoration: const InputDecoration(border: InputBorder.none),
+                            items: widget.tiendas
+                                .map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis)))
+                                .toList(),
+                            onChanged: (val) => setState(() => _tiendasSeleccionadas[col] = val),
+                            hint: Text('Tienda ${col + 1}'),
                           ),
                         ),
-                    ],
-                    rows: _generarFilasExcel(),
-                  ),
+                      ),
+                  ],
+                  rows: _generarFilasExcel(),
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1241,7 +1908,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
   }
 }
 
-// TAB 4: COMPARADOR DE TICKETS
+// PESTAÑA 5: COMPARADOR DE TICKETS
 class ComparadorTicketsExcelPantalla extends StatefulWidget {
   final List<TicketCompra> tickets;
 
@@ -1272,176 +1939,172 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
       }
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Comparador de Tickets Excel'),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<TicketCompra>(
-                            value: _ticketA,
-                            decoration: const InputDecoration(
-                              labelText: 'Columna A: Seleccionar Ticket 1',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: widget.tickets
-                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextOverflow.ellipsis)))
-                                .toList(),
-                            onChanged: (val) => setState(() => _ticketA = val),
-                            hint: const Text('Elegir Ticket 1'),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<TicketCompra>(
+                          value: _ticketA,
+                          decoration: const InputDecoration(
+                            labelText: 'Columna A: Seleccionar Ticket 1',
+                            border: OutlineInputBorder(),
                           ),
+                          items: widget.tickets
+                              .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextOverflow.ellipsis)))
+                              .toList(),
+                          onChanged: (val) => setState(() => _ticketA = val),
+                          hint: const Text('Elegir Ticket 1'),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<TicketCompra>(
-                            value: _ticketB,
-                            decoration: const InputDecoration(
-                              labelText: 'Columna B: Seleccionar Ticket 2',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: widget.tickets
-                                .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextOverflow.ellipsis)))
-                                .toList(),
-                            onChanged: (val) => setState(() => _ticketB = val),
-                            hint: const Text('Elegir Ticket 2'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<TicketCompra>(
+                          value: _ticketB,
+                          decoration: const InputDecoration(
+                            labelText: 'Columna B: Seleccionar Ticket 2',
+                            border: OutlineInputBorder(),
                           ),
+                          items: widget.tickets
+                              .map((t) => DropdownMenuItem(value: t, child: Text(t.etiquetaVisual, overflow: TextOverflow.ellipsis)))
+                              .toList(),
+                          onChanged: (val) => setState(() => _ticketB = val),
+                          hint: const Text('Elegir Ticket 2'),
                         ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
+        ),
 
-          Expanded(
-            child: (_ticketA == null && _ticketB == null)
-                ? const Center(child: Text('Selecciona dos tickets arriba para comparar.'))
-                : SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: DataTable(
-                          headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
-                          columnSpacing: 20,
-                          columns: [
-                            const DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text(_ticketA?.tienda ?? 'Ticket A', style: const TextStyle(fontWeight: FontWeight.bold))),
-                            DataColumn(label: Text(_ticketB?.tienda ?? 'Ticket B', style: const TextStyle(fontWeight: FontWeight.bold))),
-                          ],
-                          rows: nombresProductos.map((prodNombre) {
-                            ProductoCompra? prodA;
-                            ProductoCompra? prodB;
+        Expanded(
+          child: (_ticketA == null && _ticketB == null)
+              ? const Center(child: Text('Selecciona dos tickets arriba para comparar.'))
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: DataTable(
+                        headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
+                        columnSpacing: 20,
+                        columns: [
+                          const DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text(_ticketA?.tienda ?? 'Ticket A', style: const TextStyle(fontWeight: FontWeight.bold))),
+                          DataColumn(label: Text(_ticketB?.tienda ?? 'Ticket B', style: const TextStyle(fontWeight: FontWeight.bold))),
+                        ],
+                        rows: nombresProductos.map((prodNombre) {
+                          ProductoCompra? prodA;
+                          ProductoCompra? prodB;
 
-                            if (_ticketA != null) {
-                              try {
-                                prodA = _ticketA!.productos.firstWhere((p) => p.nombre.toLowerCase() == prodNombre.toLowerCase());
-                              } catch (_) {}
+                          if (_ticketA != null) {
+                            try {
+                              prodA = _ticketA!.productos.firstWhere((p) => p.nombre.toLowerCase() == prodNombre.toLowerCase());
+                            } catch (_) {}
+                          }
+                          if (_ticketB != null) {
+                            try {
+                              prodB = _ticketB!.productos.firstWhere((p) => p.nombre.toLowerCase() == prodNombre.toLowerCase());
+                            } catch (_) {}
+                          }
+
+                          final enAmbos = (prodA != null && prodB != null);
+                          Color fondoA = Colors.transparent;
+                          Color fondoB = Colors.transparent;
+
+                          if (enAmbos) {
+                            if (prodA!.precioPorUnidadBase < prodB!.precioPorUnidadBase) {
+                              fondoA = Colors.green.shade100;
+                              fondoB = Colors.red.shade100;
+                            } else if (prodA.precioPorUnidadBase > prodB.precioPorUnidadBase) {
+                              fondoA = Colors.red.shade100;
+                              fondoB = Colors.green.shade100;
                             }
-                            if (_ticketB != null) {
-                              try {
-                                prodB = _ticketB!.productos.firstWhere((p) => p.nombre.toLowerCase() == prodNombre.toLowerCase());
-                              } catch (_) {}
-                            }
+                          } else {
+                            if (prodA != null) fondoA = Colors.grey.shade200;
+                            if (prodB != null) fondoB = Colors.grey.shade200;
+                          }
 
-                            final enAmbos = (prodA != null && prodB != null);
-                            Color fondoA = Colors.transparent;
-                            Color fondoB = Colors.transparent;
-
-                            if (enAmbos) {
-                              if (prodA!.precioPorUnidadBase < prodB!.precioPorUnidadBase) {
-                                fondoA = Colors.green.shade100;
-                                fondoB = Colors.red.shade100;
-                              } else if (prodA.precioPorUnidadBase > prodB.precioPorUnidadBase) {
-                                fondoA = Colors.red.shade100;
-                                fondoB = Colors.green.shade100;
-                              }
-                            } else {
-                              if (prodA != null) fondoA = Colors.grey.shade200;
-                              if (prodB != null) fondoB = Colors.grey.shade200;
-                            }
-
-                            return DataRow(
-                              cells: [
-                                DataCell(Text(prodNombre, style: const TextStyle(fontWeight: FontWeight.bold))),
-                                DataCell(
-                                  Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(color: fondoA, borderRadius: BorderRadius.circular(4)),
-                                    child: prodA == null
-                                        ? const Text('-', style: TextStyle(color: Colors.grey))
-                                        : Text(
-                                            '\$${prodA.precioUnitarioPaquete.toStringAsFixed(2)} (${prodA.cantidadPorPaquete}${prodA.unidad})',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: enAmbos ? (fondoA == Colors.green.shade100 ? Colors.green.shade900 : Colors.red.shade900) : Colors.black54,
-                                            ),
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(prodNombre, style: const TextStyle(fontWeight: FontWeight.bold))),
+                              DataCell(
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(color: fondoA, borderRadius: BorderRadius.circular(4)),
+                                  child: prodA == null
+                                      ? const Text('-', style: TextStyle(color: Colors.grey))
+                                      : Text(
+                                          '\$${prodA.precioUnitarioPaquete.toStringAsFixed(2)} (${prodA.cantidadPorPaquete}${prodA.unidad})',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: enAmbos ? (fondoA == Colors.green.shade100 ? Colors.green.shade900 : Colors.red.shade900) : Colors.black54,
                                           ),
-                                  ),
+                                        ),
                                 ),
-                                DataCell(
-                                  Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(color: fondoB, borderRadius: BorderRadius.circular(4)),
-                                    child: prodB == null
-                                        ? const Text('-', style: TextStyle(color: Colors.grey))
-                                        : Text(
-                                            '\$${prodB.precioUnitarioPaquete.toStringAsFixed(2)} (${prodB.cantidadPorPaquete}${prodB.unidad})',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: enAmbos ? (fondoB == Colors.green.shade100 ? Colors.green.shade900 : Colors.red.shade900) : Colors.black54,
-                                            ),
+                              ),
+                              DataCell(
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(color: fondoB, borderRadius: BorderRadius.circular(4)),
+                                  child: prodB == null
+                                      ? const Text('-', style: TextStyle(color: Colors.grey))
+                                      : Text(
+                                          '\$${prodB.precioUnitarioPaquete.toStringAsFixed(2)} (${prodB.cantidadPorPaquete}${prodB.unidad})',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: enAmbos ? (fondoB == Colors.green.shade100 ? Colors.green.shade900 : Colors.red.shade900) : Colors.black54,
                                           ),
-                                  ),
+                                        ),
                                 ),
-                              ],
-                            );
-                          }).toList(),
-                        ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),
-          ),
-        ],
-      ),
+                ),
+        ),
+      ],
     );
   }
 }
 
-// TAB 5: GESTIÓN DE TIENDAS Y CATÁLOGOS EN NUBE
-class GestionCatalogosPantalla extends StatefulWidget {
+// PESTAÑA 6: GESTIÓN DE CATÁLOGOS Y USUARIOS (ADMINISTRADOR)
+class GestionCatalogosYUsuariosPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
   final List<ProductoAlmacen> catalogo;
+  final UsuarioApp usuarioActual;
 
-  const GestionCatalogosPantalla({
+  const GestionCatalogosYUsuariosPantalla({
     super.key,
     required this.tiendas,
     required this.categorias,
     required this.catalogo,
+    required this.usuarioActual,
   });
 
   @override
-  State<GestionCatalogosPantalla> createState() => _GestionCatalogosPantallaState();
+  State<GestionCatalogosYUsuariosPantalla> createState() => _GestionCatalogosYUsuariosPantallaState();
 }
 
-class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
+class _GestionCatalogosYUsuariosPantallaState extends State<GestionCatalogosYUsuariosPantalla> {
   final _tiendaNombreController = TextEditingController();
   final _categoriaNombreController = TextEditingController();
 
@@ -1450,6 +2113,13 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
   String _prodUnidad = 'gr';
   String? _prodCategoriaSeleccionada;
   final List<String> _unidades = ['gr', 'kg', 'ml', 'L', 'un', 'mts'];
+
+  // FORMULARIO CREACIÓN DE USUARIO (ADMIN)
+  final _nuevoUsuarioNombreCtrl = TextEditingController();
+  final _nuevoUsuarioEmailCtrl = TextEditingController();
+  final _nuevoUsuarioPassCtrl = TextEditingController();
+  String _nuevoUsuarioRol = 'miembro';
+  bool _creandoUser = false;
 
   void _agregarTienda() async {
     final nombre = _tiendaNombreController.text.trim();
@@ -1484,24 +2154,81 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
     }
   }
 
+  void _crearNuevoUsuarioEnFirebase() async {
+    final nombre = _nuevoUsuarioNombreCtrl.text.trim();
+    final email = _nuevoUsuarioEmailCtrl.text.trim();
+    final pass = _nuevoUsuarioPassCtrl.text.trim();
+
+    if (nombre.isEmpty || email.isEmpty || pass.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Completa el nombre, correo y una contraseña de al menos 6 caracteres.')),
+      );
+      return;
+    }
+
+    setState(() => _creandoUser = true);
+
+    try {
+      // Usamos una app secundaria para no cerrar la sesión del Administrador actual
+      final tempApp = await Firebase.initializeApp(
+        name: 'TempCreator_${DateTime.now().millisecondsSinceEpoch}',
+        options: Firebase.app().options,
+      );
+
+      final tempAuth = FirebaseAuth.instanceFor(app: tempApp);
+      final cred = await tempAuth.createUserWithEmailAndPassword(email: email, password: pass);
+
+      await FirebaseFirestore.instance.collection('usuarios').doc(cred.user!.uid).set({
+        'nombre': nombre,
+        'email': email,
+        'rol': _nuevoUsuarioRol,
+        'fechaCreacion': DateTime.now().toIso8601String(),
+      });
+
+      await tempApp.delete();
+
+      _nuevoUsuarioNombreCtrl.clear();
+      _nuevoUsuarioEmailCtrl.clear();
+      _nuevoUsuarioPassCtrl.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('¡Usuario $nombre ($email) creado con éxito!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al crear el usuario: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creandoUser = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: widget.usuarioActual.esAdmin ? 4 : 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Administrar Catálogos (Nube)'),
-          bottom: const TabBar(
+          title: const Text('Administración y Usuarios'),
+          automaticallyImplyLeading: false,
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(icon: Icon(Icons.store), text: 'Tiendas'),
-              Tab(icon: Icon(Icons.category), text: 'Categorías'),
-              Tab(icon: Icon(Icons.inventory_2), text: 'Catálogo Base'),
+              const Tab(icon: Icon(Icons.store), text: 'Tiendas'),
+              const Tab(icon: Icon(Icons.category), text: 'Categorías'),
+              const Tab(icon: Icon(Icons.inventory_2), text: 'Catálogo Base'),
+              if (widget.usuarioActual.esAdmin)
+                const Tab(icon: Icon(Icons.group_add), text: 'Usuarios'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
+            // TAB TIENDAS
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -1511,17 +2238,11 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                       Expanded(
                         child: TextField(
                           controller: _tiendaNombreController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nueva Tienda',
-                            border: OutlineInputBorder(),
-                          ),
+                          decoration: const InputDecoration(labelText: 'Nueva Tienda', border: OutlineInputBorder()),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton.filled(
-                        onPressed: _agregarTienda,
-                        icon: const Icon(Icons.add),
-                      ),
+                      IconButton.filled(onPressed: _agregarTienda, icon: const Icon(Icons.add)),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -1529,19 +2250,15 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                     child: ListView.builder(
                       itemCount: widget.tiendas.length,
                       itemBuilder: (context, index) {
-                        final t = widget.tiendas[index];
-                        return Card(
-                          child: ListTile(
-                            leading: const Icon(Icons.store),
-                            title: Text(t),
-                          ),
-                        );
+                        return Card(child: ListTile(leading: const Icon(Icons.store), title: Text(widget.tiendas[index])));
                       },
                     ),
                   ),
                 ],
               ),
             ),
+
+            // TAB CATEGORÍAS
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -1551,17 +2268,11 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                       Expanded(
                         child: TextField(
                           controller: _categoriaNombreController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nueva Categoría',
-                            border: OutlineInputBorder(),
-                          ),
+                          decoration: const InputDecoration(labelText: 'Nueva Categoría', border: OutlineInputBorder()),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton.filled(
-                        onPressed: _agregarCategoria,
-                        icon: const Icon(Icons.add),
-                      ),
+                      IconButton.filled(onPressed: _agregarCategoria, icon: const Icon(Icons.add)),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -1569,19 +2280,15 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                     child: ListView.builder(
                       itemCount: widget.categorias.length,
                       itemBuilder: (context, index) {
-                        final cat = widget.categorias[index];
-                        return Card(
-                          child: ListTile(
-                            leading: const Icon(Icons.category),
-                            title: Text(cat),
-                          ),
-                        );
+                        return Card(child: ListTile(leading: const Icon(Icons.category), title: Text(widget.categorias[index])));
                       },
                     ),
                   ),
                 ],
               ),
             ),
+
+            // TAB CATÁLOGO BASE
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -1597,18 +2304,13 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                           DropdownButtonFormField<String>(
                             value: _prodCategoriaSeleccionada ?? (widget.categorias.isNotEmpty ? widget.categorias.first : null),
                             decoration: const InputDecoration(labelText: 'Categoría', border: OutlineInputBorder()),
-                            items: widget.categorias
-                                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                                .toList(),
+                            items: widget.categorias.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                             onChanged: (val) => setState(() => _prodCategoriaSeleccionada = val),
                           ),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _prodNombreController,
-                            decoration: const InputDecoration(
-                              labelText: 'Nombre Producto',
-                              border: OutlineInputBorder(),
-                            ),
+                            decoration: const InputDecoration(labelText: 'Nombre Producto', border: OutlineInputBorder()),
                           ),
                           const SizedBox(height: 8),
                           Row(
@@ -1618,10 +2320,7 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                                 child: TextField(
                                   controller: _prodCantidadController,
                                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Contenido Base',
-                                    border: OutlineInputBorder(),
-                                  ),
+                                  decoration: const InputDecoration(labelText: 'Contenido Base', border: OutlineInputBorder()),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1668,6 +2367,119 @@ class _GestionCatalogosPantallaState extends State<GestionCatalogosPantalla> {
                 ],
               ),
             ),
+
+            // TAB GESTIÓN DE USUARIOS (SOLO ADMINISTRADOR)
+            if (widget.usuarioActual.esAdmin)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Generar Nuevo Usuario', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _nuevoUsuarioNombreCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Nombre Completo',
+                                  prefixIcon: Icon(Icons.person),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: _nuevoUsuarioEmailCtrl,
+                                keyboardType: TextInputType.emailAddress,
+                                decoration: const InputDecoration(
+                                  labelText: 'Correo Electrónico (Login)',
+                                  prefixIcon: Icon(Icons.email),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: _nuevoUsuarioPassCtrl,
+                                obscureText: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Contraseña Inicial (mín. 6 car.)',
+                                  prefixIcon: Icon(Icons.key),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              DropdownButtonFormField<String>(
+                                value: _nuevoUsuarioRol,
+                                decoration: const InputDecoration(labelText: 'Rol en la Aplicación', border: OutlineInputBorder()),
+                                items: const [
+                                  DropdownMenuItem(value: 'miembro', child: Text('Miembro (Ver y Consumir)')),
+                                  DropdownMenuItem(value: 'admin', child: Text('Administrador (Acceso Total)')),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) setState(() => _nuevoUsuarioRol = val);
+                                },
+                              ),
+                              const SizedBox(height: 14),
+                              _creandoUser
+                                  ? const Center(child: CircularProgressIndicator())
+                                  : ElevatedButton.icon(
+                                      onPressed: _crearNuevoUsuarioEnFirebase,
+                                      icon: const Icon(Icons.person_add),
+                                      label: const Text('Generar Perfil y Guardar'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.teal,
+                                        foregroundColor: Colors.white,
+                                        minimumSize: const Size.fromHeight(45),
+                                      ),
+                                    ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      const Text('Usuarios Registrados:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 8),
+
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance.collection('usuarios').snapshots(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                          final docs = snapshot.data!.docs;
+
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: docs.length,
+                            itemBuilder: (context, index) {
+                              final u = docs[index].data() as Map<String, dynamic>;
+                              final nombre = u['nombre'] ?? 'Sin nombre';
+                              final email = u['email'] ?? '';
+                              final rol = u['rol'] ?? 'miembro';
+
+                              return Card(
+                                child: ListTile(
+                                  leading: Icon(
+                                    rol == 'admin' ? Icons.admin_panel_settings : Icons.person,
+                                    color: rol == 'admin' ? Colors.teal : Colors.grey,
+                                  ),
+                                  title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: Text('$email | Rol: ${rol.toUpperCase()}'),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),

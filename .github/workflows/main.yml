@@ -26,7 +26,7 @@ jobs:
 
       - name: Inyectar dependencias de Firebase
         run: |
-          flutter pub add firebase_core cloud_firestore
+          flutter pub add firebase_core cloud_firestore firebase_auth
 
       - name: Generar y configurar Android para Firebase
         run: |
