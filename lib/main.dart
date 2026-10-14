@@ -5,13 +5,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // CREDENCIALES CONFIGURADAS
   await Firebase.initializeApp(
     options: const FirebaseOptions(
       apiKey: "AIzaSyCJI4y01Hz8MH_s8sajNWEUUkX8E1SHrgc",
       appId: "1:70786421592:web:99af61d76f25c1b044cb2d",
       messagingSenderId: "70786421592",
       projectId: "gestor-casa-3bf3b",
+      authDomain: "gestor-casa-3bf3b.firebaseapp.com",
+      storageBucket: "gestor-casa-3bf3b.firebasestorage.app",
     ),
   );
 
@@ -35,7 +36,7 @@ class MiAppCasa extends StatelessWidget {
   }
 }
 
-// MODELOS
+// MODELOS CON CONVERSIÓN SEGURA DE TIPOS
 class ProductoAlmacen {
   final String id;
   final String nombre;
@@ -52,13 +53,13 @@ class ProductoAlmacen {
   });
 
   factory ProductoAlmacen.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>?;
     return ProductoAlmacen(
       id: doc.id,
-      nombre: data['nombre'] ?? '',
-      cantidadPaquete: (data['cantidadPaquete'] ?? 0.0).toDouble(),
-      unidad: data['unidad'] ?? 'gr',
-      categoria: data['categoria'] ?? 'General',
+      nombre: data?['nombre'] ?? '',
+      cantidadPaquete: ((data?['cantidadPaquete'] ?? 0.0) as num).toDouble(),
+      unidad: data?['unidad'] ?? 'gr',
+      categoria: data?['categoria'] ?? 'General',
     );
   }
 
@@ -90,13 +91,13 @@ class ItemDespensa {
   });
 
   factory ItemDespensa.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>?;
     return ItemDespensa(
       id: doc.id,
-      nombre: data['nombre'] ?? '',
-      cantidadActual: (data['cantidadActual'] ?? 0.0).toDouble(),
-      unidad: data['unidad'] ?? 'gr',
-      categoria: data['categoria'] ?? 'General',
+      nombre: data?['nombre'] ?? '',
+      cantidadActual: ((data?['cantidadActual'] ?? 0.0) as num).toDouble(),
+      unidad: data?['unidad'] ?? 'gr',
+      categoria: data?['categoria'] ?? 'General',
     );
   }
 }
@@ -136,10 +137,10 @@ class ProductoCompra {
     return ProductoCompra(
       nombre: map['nombre'] ?? '',
       lugar: map['lugar'] ?? '',
-      paquetesComprados: map['paquetesComprados'] ?? 1,
-      cantidadPorPaquete: (map['cantidadPorPaquete'] ?? 1.0).toDouble(),
+      paquetesComprados: ((map['paquetesComprados'] ?? 1) as num).toInt(),
+      cantidadPorPaquete: ((map['cantidadPorPaquete'] ?? 1.0) as num).toDouble(),
       unidad: map['unidad'] ?? 'gr',
-      precioUnitarioPaquete: (map['precioUnitarioPaquete'] ?? 0.0).toDouble(),
+      precioUnitarioPaquete: ((map['precioUnitarioPaquete'] ?? 0.0) as num).toDouble(),
       categoria: map['categoria'] ?? 'General',
       fecha: DateTime.parse(map['fecha'] ?? DateTime.now().toIso8601String()),
     );
@@ -179,23 +180,23 @@ class TicketCompra {
   });
 
   factory TicketCompra.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    final prodsRaw = (data['productos'] as List<dynamic>?) ?? [];
+    final data = doc.data() as Map<String, dynamic>?;
+    final prodsRaw = (data?['productos'] as List<dynamic>?) ?? [];
     return TicketCompra(
       id: doc.id,
-      fecha: DateTime.parse(data['fecha'] ?? DateTime.now().toIso8601String()),
-      tienda: data['tienda'] ?? '',
-      subtotal: (data['subtotal'] ?? 0.0).toDouble(),
-      montoDescuento: (data['montoDescuento'] ?? 0.0).toDouble(),
-      totalFinal: (data['totalFinal'] ?? 0.0).toDouble(),
-      productos: prodsRaw.map((p) => ProductoCompra.fromMap(p)).toList(),
+      fecha: DateTime.parse(data?['fecha'] ?? DateTime.now().toIso8601String()),
+      tienda: data?['tienda'] ?? '',
+      subtotal: ((data?['subtotal'] ?? 0.0) as num).toDouble(),
+      montoDescuento: ((data?['montoDescuento'] ?? 0.0) as num).toDouble(),
+      totalFinal: ((data?['totalFinal'] ?? 0.0) as num).toDouble(),
+      productos: prodsRaw.map((p) => ProductoCompra.fromMap(p as Map<String, dynamic>)).toList(),
     );
   }
 
   String get etiquetaVisual => '$tienda - ${fecha.day}/${fecha.month}/${fecha.year} (\$$totalFinal)';
 }
 
-// NAVEGACIÓN
+// NAVEGACIÓN PRINCIPAL
 class PantallaNavegacionPrincipal extends StatefulWidget {
   const PantallaNavegacionPrincipal({super.key});
 
@@ -214,15 +215,15 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
       body: StreamBuilder<QuerySnapshot>(
         stream: db.collection('tiendas').snapshots(),
         builder: (context, snapshotTiendas) {
-          final tiendas = snapshotTiendas.hasData
-              ? snapshotTiendas.data!.docs.map((d) => d['nombre'] as String).toList()
-              : ['Coto', 'Carrefour'];
+          final tiendas = (snapshotTiendas.hasData && snapshotTiendas.data!.docs.isNotEmpty)
+              ? snapshotTiendas.data!.docs.map((d) => (d.data() as Map<String, dynamic>)['nombre'] as String? ?? '').where((s) => s.isNotEmpty).toList()
+              : ['Supermercado Coto', 'Carrefour', 'Verdulería del Barrio'];
 
           return StreamBuilder<QuerySnapshot>(
             stream: db.collection('categorias').snapshots(),
             builder: (context, snapshotCategorias) {
-              final categorias = snapshotCategorias.hasData
-                  ? snapshotCategorias.data!.docs.map((d) => d['nombre'] as String).toList()
+              final categorias = (snapshotCategorias.hasData && snapshotCategorias.data!.docs.isNotEmpty)
+                  ? snapshotCategorias.data!.docs.map((d) => (d.data() as Map<String, dynamic>)['nombre'] as String? ?? '').where((s) => s.isNotEmpty).toList()
                   : ['Alimentos', 'Limpieza', 'Bebidas', 'Higiene y Perfumería'];
 
               return StreamBuilder<QuerySnapshot>(
@@ -283,7 +284,7 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
   }
 }
 
-// COMPONENTE 1: REGISTRO DE COMPRAS CON GUARDADO EN NUBE
+// PESTAÑA 1: REGISTRO DE COMPRAS CON SYNC FIREBASE
 class RegistroComprasPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -391,7 +392,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
 
       if (query.docs.isNotEmpty) {
         final doc = query.docs.first;
-        final stockActual = (doc['cantidadActual'] ?? 0.0).toDouble();
+        final stockActual = ((doc.data()['cantidadActual'] ?? 0.0) as num).toDouble();
         await db.collection('despensa').doc(doc.id).update({
           'cantidadActual': stockActual + prod.cantidadTotalProd,
         });
@@ -405,9 +406,11 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
       }
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('¡Compra sincronizada en la nube de Firebase!')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('¡Compra guardada y sincronizada en la nube!')),
+      );
+    }
 
     setState(() {
       _productosTicket.clear();
@@ -727,7 +730,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   }
 }
 
-// COMPONENTE 2: DESPENSA CON DESCUENTO DE STOCK EN FIREBASE
+// PESTAÑA 2: DESPENSA CON DESCUENTO DE STOCK EN NUBE
 class DespensaConsumoPantalla extends StatefulWidget {
   final List<ItemDespensa> despensa;
   final List<String> categorias;
@@ -892,7 +895,7 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
   }
 }
 
-// COMPONENTE 3: SIMULADOR EXCEL
+// PESTAÑA 3: SIMULADOR EXCEL MULTITIENDA
 class SimuladorComprasExcelPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -1238,7 +1241,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
   }
 }
 
-// COMPONENTE 4: COMPARADOR DE TICKETS TIPO EXCEL
+// PESTAÑA 4: COMPARADOR DE TICKETS
 class ComparadorTicketsExcelPantalla extends StatefulWidget {
   final List<TicketCompra> tickets;
 
@@ -1421,7 +1424,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
   }
 }
 
-// COMPONENTE 5: GESTIÓN DE TIENDAS Y CATÁLOGOS CON CONEXIÓN FIREBASE
+// PESTAÑA 5: GESTIÓN DE TIENDAS Y CATÁLOGOS CON FIREBASE
 class GestionCatalogosPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
