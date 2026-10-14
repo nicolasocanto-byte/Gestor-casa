@@ -2,7 +2,7 @@ name: Fabricar APK
 
 on:
   push:
-    branches: [ "**" ]
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
@@ -24,11 +24,22 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generar carpeta nativa de Android
-        run: flutter create . --platforms=android --project-name=gestor_casa
-
-      - name: Preparar la app
-        run: flutter pub get
+      - name: Generar y configurar Android para Firebase
+        run: |
+          flutter create . --platforms=android --org com.example
+          python3 -c "
+          import re
+          path = 'android/app/build.gradle'
+          with open(path, 'r') as f:
+              content = f.read()
+          content = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', content)
+          content = re.sub(r'minSdk\s*=.*', 'minSdk = 21', content)
+          if 'multiDexEnabled' not in content:
+              content = re.sub(r'(defaultConfig\s*\{)', r'\1\n        multiDexEnabled true', content)
+          with open(path, 'w') as f:
+              f.write(content)
+          "
+          flutter pub get
 
       - name: Construir el archivo APK
         run: flutter build apk --release
@@ -36,5 +47,5 @@ jobs:
       - name: Guardar el APK para descargarlo
         uses: actions/upload-artifact@v4
         with:
-          name: app-casa-apk
+          name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
