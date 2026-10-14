@@ -10,27 +10,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar el código
+      - name: Descargar el código del repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar Java (necesario para Android)
+      - name: Preparar entorno Java (17)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Instalar Flutter
+      - name: Instalar entorno Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: Inyectar dependencias de Firebase
-        run: |
-          flutter pub add firebase_core cloud_firestore firebase_auth
-
-      - name: Generar y configurar Android para Firebase
+      - name: Crear proyecto Android e Inyectar Firebase
         run: |
           flutter create . --platforms=android --org com.example
+          flutter pub add firebase_core cloud_firestore firebase_auth
           python3 -c "
           import os, re
           for root, dirs, files in os.walk('android'):
@@ -54,10 +51,10 @@ jobs:
           "
           flutter pub get
 
-      - name: Construir el archivo APK
+      - name: Compilar archivo APK Release
         run: flutter build apk --release
 
-      - name: Guardar el APK para descargarlo
+      - name: Guardar el APK resultante para descargar
         uses: actions/upload-artifact@v4
         with:
           name: app-release
