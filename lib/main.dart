@@ -196,7 +196,7 @@ class TicketCompra {
   String get etiquetaVisual => '$tienda - ${fecha.day}/${fecha.month}/${fecha.year} (\$$totalFinal)';
 }
 
-// NAVEGACIÓN PRINCIPAL
+// NAVEGACIÓN PRINCIPAL CON STREAMBUILDER EN TIEMPO REAL
 class PantallaNavegacionPrincipal extends StatefulWidget {
   const PantallaNavegacionPrincipal({super.key});
 
@@ -217,7 +217,7 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
         builder: (context, snapshotTiendas) {
           final tiendas = (snapshotTiendas.hasData && snapshotTiendas.data!.docs.isNotEmpty)
               ? snapshotTiendas.data!.docs.map((d) => (d.data() as Map<String, dynamic>)['nombre'] as String? ?? '').where((s) => s.isNotEmpty).toList()
-              : ['Supermercado Coto', 'Carrefour', 'Verdulería del Barrio'];
+              : ['Coto', 'Carrefour', 'Verdulería del Barrio'];
 
           return StreamBuilder<QuerySnapshot>(
             stream: db.collection('categorias').snapshots(),
@@ -284,7 +284,7 @@ class _PantallaNavegacionPrincipalState extends State<PantallaNavegacionPrincipa
   }
 }
 
-// PESTAÑA 1: REGISTRO DE COMPRAS CON SYNC FIREBASE
+// TAB 1: REGISTRO DE COMPRAS CON SYNC FIREBASE
 class RegistroComprasPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -730,7 +730,7 @@ class _RegistroComprasPantallaState extends State<RegistroComprasPantalla> {
   }
 }
 
-// PESTAÑA 2: DESPENSA CON DESCUENTO DE STOCK EN NUBE
+// TAB 2: DESPENSA CON DESCUENTO DE STOCK EN NUBE
 class DespensaConsumoPantalla extends StatefulWidget {
   final List<ItemDespensa> despensa;
   final List<String> categorias;
@@ -895,7 +895,7 @@ class _DespensaConsumoPantallaState extends State<DespensaConsumoPantalla> {
   }
 }
 
-// PESTAÑA 3: SIMULADOR EXCEL MULTITIENDA
+// TAB 3: SIMULADOR EXCEL MULTITIENDA
 class SimuladorComprasExcelPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
@@ -1096,7 +1096,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
                   child: DataTable(
-                    headingRowColor: MaterialStateProperty.all(Colors.teal.shade100),
+                    headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
                     columnSpacing: 16,
                     dataRowMinHeight: 48,
                     columns: [
@@ -1140,7 +1140,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
     porCategoria.forEach((categoria, productos) {
       filas.add(
         DataRow(
-          color: MaterialStateProperty.all(_obtenerColorCategoria(categoria)),
+          color: WidgetStateProperty.all(_obtenerColorCategoria(categoria)),
           cells: [
             DataCell(
               Text(
@@ -1241,7 +1241,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
   }
 }
 
-// PESTAÑA 4: COMPARADOR DE TICKETS
+// TAB 4: COMPARADOR DE TICKETS
 class ComparadorTicketsExcelPantalla extends StatefulWidget {
   final List<TicketCompra> tickets;
 
@@ -1338,7 +1338,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
                         child: DataTable(
-                          headingRowColor: MaterialStateProperty.all(Colors.teal.shade100),
+                          headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
                           columnSpacing: 20,
                           columns: [
                             const DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -1424,7 +1424,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
   }
 }
 
-// PESTAÑA 5: GESTIÓN DE TIENDAS Y CATÁLOGOS CON FIREBASE
+// TAB 5: GESTIÓN DE TIENDAS Y CATÁLOGOS EN NUBE
 class GestionCatalogosPantalla extends StatefulWidget {
   final List<String> tiendas;
   final List<String> categorias;
