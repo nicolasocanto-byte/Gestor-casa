@@ -24,15 +24,23 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Resguardar main.dart y crear entorno Android
+      - name: Preparar entorno limpio y respaldar main.dart
         run: |
           mkdir -p /tmp/app_backup
-          cp lib/main.dart /tmp/app_backup/main.dart
+          if [ -f lib/main.dart ]; then
+            cp lib/main.dart /tmp/app_backup/main.dart
+          fi
+          
           flutter create . --platforms=android --org com.example --overwrite
-          cp /tmp/app_backup/main.dart lib/main.dart
+          
+          rm -rf lib/*
+          if [ -f /tmp/app_backup/main.dart ]; then
+            cp /tmp/app_backup/main.dart lib/main.dart
+          fi
+          
           flutter pub add firebase_core cloud_firestore firebase_auth
 
-      - name: Parchear Gradle Android para Firebase (SDK 34 y MinSDK 21)
+      - name: Parchear Gradle Android para Firebase y MultiDex
         run: |
           python3 -c "
           import os, re
@@ -46,6 +54,10 @@ jobs:
                       txt = re.sub(r'compileSdk\s*=\s*.*', 'compileSdk = 34', txt)
                       txt = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', txt)
                       txt = re.sub(r'minSdk\s*=\s*.*', 'minSdk = 21', txt)
+                      txt = re.sub(r'targetSdkVersion\s+.*', 'targetSdkVersion 34', txt)
+                      txt = re.sub(r'targetSdk\s*=\s*.*', 'targetSdk = 34', txt)
+                      if 'multiDexEnabled' not in txt:
+                          txt = re.sub(r'(defaultConfig\s*\{)', r'\1\n        multiDexEnabled true', txt)
                       with open(path, 'w') as file:
                           file.write(txt)
           "
