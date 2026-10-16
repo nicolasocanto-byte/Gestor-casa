@@ -40,7 +40,7 @@ jobs:
           
           flutter pub add firebase_core cloud_firestore firebase_auth
 
-      - name: Parchear Gradle Android para Firebase y MultiDex
+      - name: Parchear Gradle Android para Firebase (SDK 34 y MinSDK 21)
         run: |
           python3 -c "
           import os, re
@@ -54,10 +54,6 @@ jobs:
                       txt = re.sub(r'compileSdk\s*=\s*.*', 'compileSdk = 34', txt)
                       txt = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', txt)
                       txt = re.sub(r'minSdk\s*=\s*.*', 'minSdk = 21', txt)
-                      txt = re.sub(r'targetSdkVersion\s+.*', 'targetSdkVersion 34', txt)
-                      txt = re.sub(r'targetSdk\s*=\s*.*', 'targetSdk = 34', txt)
-                      if 'multiDexEnabled' not in txt:
-                          txt = re.sub(r'(defaultConfig\s*\{)', r'\1\n        multiDexEnabled true', txt)
                       with open(path, 'w') as file:
                           file.write(txt)
           "
