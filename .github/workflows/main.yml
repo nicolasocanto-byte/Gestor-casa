@@ -40,7 +40,7 @@ jobs:
           
           flutter pub add firebase_core cloud_firestore firebase_auth
 
-      - name: Parchear Gradle Android para Firebase (SDK 34 y MinSDK 21)
+      - name: Parchear Gradle Android para Firebase
         run: |
           python3 -c "
           import os, re
@@ -62,6 +62,9 @@ jobs:
         run: |
           flutter clean
           flutter pub get
+
+      - name: Verificar sintaxis de Dart
+        run: flutter analyze || true
 
       - name: Compilar APK Release
         run: flutter build apk --release --no-tree-shake-icons
