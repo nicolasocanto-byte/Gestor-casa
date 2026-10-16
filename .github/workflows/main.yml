@@ -24,11 +24,19 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Respaldar main.dart y generar proyecto Android
+      - name: Preparar y respaldar proyecto
         run: |
-          cp lib/main.dart lib/main.dart.bak
-          flutter create . --platforms=android --org com.example
-          cp lib/main.dart.bak lib/main.dart
+          mkdir -p /tmp/backup
+          cp -r lib /tmp/backup/ 2>/dev/null || true
+          cp pubspec.yaml /tmp/backup/ 2>/dev/null || true
+          
+          flutter create . --platforms=android --org com.example --overwrite
+          
+          cp -r /tmp/backup/lib .
+          if [ -f /tmp/backup/pubspec.yaml ]; then
+            cp /tmp/backup/pubspec.yaml .
+          fi
+          
           flutter pub add firebase_core cloud_firestore firebase_auth
 
       - name: Parchear Gradle Android
