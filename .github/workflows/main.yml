@@ -10,11 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-<<<<<<< HEAD
       - name: Descargar el codigo
-=======
-      - name: Descargar el codigo
->>>>>>> f62eab7eaf63929d075957293a582e7620edd727
         uses: actions/checkout@v4
 
       - name: Preparar entorno Java (17)
@@ -28,7 +24,6 @@ jobs:
         with:
           channel: 'stable'
 
-<<<<<<< HEAD
       - name: Generar estructura nativa de Android
         run: flutter create . --platforms=android --org com.example
 
@@ -36,44 +31,7 @@ jobs:
         run: flutter pub add firebase_core cloud_firestore firebase_auth
 
       - name: Configurar Android Gradle (SDK 34 + MultiDex)
-=======
-      - name: Crear estructura nativa de Android
-        run: flutter create . --platforms=android --org com.example
-
-      - name: Configurar pubspec.yaml con Firebase
->>>>>>> f62eab7eaf63929d075957293a582e7620edd727
         run: |
-<<<<<<< HEAD
-=======
-          cat << 'EOF' > pubspec.yaml
-          name: gestor_casa
-          description: "Gestor de Hogar"
-          publish_to: "none"
-          version: 1.0.0+1
-
-          environment:
-            sdk: ">=3.0.0 <4.0.0"
-
-          dependencies:
-            flutter:
-              sdk: flutter
-            cupertino_icons: ^1.0.6
-            firebase_core: ^2.27.0
-            cloud_firestore: ^4.15.8
-            firebase_auth: ^4.17.8
-
-          dev_dependencies:
-            flutter_test:
-              sdk: flutter
-            flutter_lints: ^3.0.0
-
-          flutter:
-            uses-material-design: true
-          EOF
-
-      - name: Parchear Gradle para Firebase (SDK 34 + MultiDex)
-        run: |
->>>>>>> f62eab7eaf63929d075957293a582e7620edd727
           python3 -c "
           import os, re
           for root, dirs, files in os.walk('android'):
