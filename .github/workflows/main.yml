@@ -24,9 +24,11 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generar proyecto Android
+      - name: Respaldar main.dart y generar proyecto Android
         run: |
-          flutter create . --platforms=android --org com.example --overwrite
+          cp lib/main.dart lib/main.dart.bak
+          flutter create . --platforms=android --org com.example
+          cp lib/main.dart.bak lib/main.dart
           flutter pub add firebase_core cloud_firestore firebase_auth
 
       - name: Parchear Gradle Android
