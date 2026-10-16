@@ -24,40 +24,33 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Preparar y respaldar proyecto
+      - name: Resguardar main.dart y crear entorno Android
         run: |
-          mkdir -p /tmp/backup
-          cp -r lib /tmp/backup/ 2>/dev/null || true
-          cp pubspec.yaml /tmp/backup/ 2>/dev/null || true
-          
+          mkdir -p /tmp/app_backup
+          cp lib/main.dart /tmp/app_backup/main.dart
           flutter create . --platforms=android --org com.example --overwrite
-          
-          cp -r /tmp/backup/lib .
-          if [ -f /tmp/backup/pubspec.yaml ]; then
-            cp /tmp/backup/pubspec.yaml .
-          fi
-          
+          cp /tmp/app_backup/main.dart lib/main.dart
           flutter pub add firebase_core cloud_firestore firebase_auth
 
-      - name: Parchear Gradle Android
+      - name: Parchear Gradle Android para Firebase (SDK 34 y MinSDK 21)
         run: |
           python3 -c "
-          import os
+          import os, re
           for root, _, files in os.walk('android'):
               for f in files:
                   if f in ['build.gradle', 'build.gradle.kts'] and 'app' in root:
                       path = os.path.join(root, f)
                       with open(path, 'r') as file:
                           txt = file.read()
-                      txt = txt.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 34')
-                      txt = txt.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 34')
-                      txt = txt.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 21')
-                      txt = txt.replace('minSdk = flutter.minSdkVersion', 'minSdk = 21')
+                      txt = re.sub(r'compileSdkVersion\s+.*', 'compileSdkVersion 34', txt)
+                      txt = re.sub(r'compileSdk\s*=\s*.*', 'compileSdk = 34', txt)
+                      txt = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', txt)
+                      txt = re.sub(r'minSdk\s*=\s*.*', 'minSdk = 21', txt)
                       with open(path, 'w') as file:
                           file.write(txt)
           "
 
-      - name: Limpiar y obtener paquetes
+      - name: Limpiar y obtener dependencias
         run: |
           flutter clean
           flutter pub get
