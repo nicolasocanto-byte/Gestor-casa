@@ -2507,7 +2507,10 @@ jobs:
           }
           EOF
 
-      - name: Configurar MultiDex y minSdk en Gradle
+      - name: Validar sintaxis y tipos de Dart
+        run: flutter analyze
+
+      - name: Configurar Gradle para Android 35, minSdk 21 y MultiDex
         run: |
           python3 -c "
           import os, re
@@ -2519,15 +2522,15 @@ jobs:
                           txt = file.read()
                       txt = re.sub(r'minSdk\s*=\s*.*', 'minSdk = 21', txt)
                       txt = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', txt)
-                      txt = re.sub(r'compileSdk\s*=\s*.*', 'compileSdk = 34', txt)
-                      txt = re.sub(r'compileSdkVersion\s+.*', 'compileSdkVersion 34', txt)
+                      txt = re.sub(r'compileSdk\s*=\s*.*', 'compileSdk = 35', txt)
+                      txt = re.sub(r'compileSdkVersion\s+.*', 'compileSdkVersion 35', txt)
                       if 'multiDexEnabled' not in txt:
                           txt = txt.replace('defaultConfig {', 'defaultConfig {\n        multiDexEnabled = true')
                       with open(path, 'w') as file:
                           file.write(txt)
           "
 
-      - name: Limpiar y obtener dependencias
+      - name: Limpiar y sincronizar paquetes
         run: |
           flutter clean
           flutter pub get
