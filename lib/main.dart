@@ -1546,7 +1546,7 @@ class _ConsumoEstadisticasPantallaState extends State<ConsumoEstadisticasPantall
         todasCategorias.isEmpty
             ? const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('No hay datos para comparar.'))))
             : DataTable(
-                headingRowColor: WidgetStatePropertyAll(Colors.teal.shade50),
+                headingRowColor: WidgetStateProperty.all(Colors.teal.shade50),
                 columns: [
                   const DataColumn(label: Text('Categoría', style: TextStyle(fontWeight: FontWeight.bold))),
                   DataColumn(label: Text(_mesSeleccionadoA, style: const TextStyle(fontWeight: FontWeight.bold))),
@@ -1762,7 +1762,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12.0),
                 child: DataTable(
-                  headingRowColor: WidgetStatePropertyAll(Colors.teal.shade100),
+                  headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
                   columnSpacing: 16,
                   dataRowMinHeight: 48,
                   columns: [
@@ -1805,7 +1805,7 @@ class _SimuladorComprasExcelPantallaState extends State<SimuladorComprasExcelPan
     porCategoria.forEach((categoria, productos) {
       filas.add(
         DataRow(
-          color: WidgetStatePropertyAll(_obtenerColorCategoria(categoria)),
+          color: WidgetStateProperty.all(_obtenerColorCategoria(categoria)),
           cells: [
             DataCell(
               Text(
@@ -1998,7 +1998,7 @@ class _ComparadorTicketsExcelPantallaState extends State<ComparadorTicketsExcelP
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
                       child: DataTable(
-                        headingRowColor: WidgetStatePropertyAll(Colors.teal.shade100),
+                        headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
                         columnSpacing: 20,
                         columns: [
                           const DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
