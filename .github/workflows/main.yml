@@ -1573,7 +1573,6 @@ jobs:
                   todasCategorias.isEmpty
                       ? const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('No hay datos para comparar.'))))
                       : DataTable(
-                          headingRowColor: WidgetStateProperty.all(Colors.teal.shade50),
                           columns: [
                             const DataColumn(label: Text('Categoría', style: TextStyle(fontWeight: FontWeight.bold))),
                             DataColumn(label: Text(_mesSeleccionadoA, style: const TextStyle(fontWeight: FontWeight.bold))),
@@ -1788,7 +1787,6 @@ jobs:
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12.0),
                           child: DataTable(
-                            headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
                             columnSpacing: 16,
                             dataRowMinHeight: 48,
                             columns: [
@@ -2023,7 +2021,6 @@ jobs:
                               child: Padding(
                                 padding: const EdgeInsets.all(12.0),
                                 child: DataTable(
-                                  headingRowColor: WidgetStateProperty.all(Colors.teal.shade100),
                                   columnSpacing: 20,
                                   columns: [
                                     const DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -2510,7 +2507,7 @@ jobs:
           }
           EOF
 
-      - name: Parchear Gradle para minSdk 21
+      - name: Configurar MultiDex y minSdk en Gradle
         run: |
           python3 -c "
           import os, re
@@ -2520,10 +2517,12 @@ jobs:
                       path = os.path.join(root, f)
                       with open(path, 'r') as file:
                           txt = file.read()
-                      txt = re.sub(r'compileSdkVersion\s+.*', 'compileSdkVersion 34', txt)
-                      txt = re.sub(r'compileSdk\s*=\s*.*', 'compileSdk = 34', txt)
-                      txt = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', txt)
                       txt = re.sub(r'minSdk\s*=\s*.*', 'minSdk = 21', txt)
+                      txt = re.sub(r'minSdkVersion\s+.*', 'minSdkVersion 21', txt)
+                      txt = re.sub(r'compileSdk\s*=\s*.*', 'compileSdk = 34', txt)
+                      txt = re.sub(r'compileSdkVersion\s+.*', 'compileSdkVersion 34', txt)
+                      if 'multiDexEnabled' not in txt:
+                          txt = txt.replace('defaultConfig {', 'defaultConfig {\n        multiDexEnabled = true')
                       with open(path, 'w') as file:
                           file.write(txt)
           "
